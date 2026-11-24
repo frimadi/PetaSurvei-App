@@ -120,7 +120,7 @@ class _HalamanPengaturanState extends State<HalamanPengaturan> {
           },
         ),
         const SizedBox(height: 24),
-        const Text('Peta Survei v0.1 (tahap 1: foto disimpan di HP, belum mengunggah).',
+        const Text('Peta Survei v0.2 (tahap 2: foto dikirim ke Drive lewat skrip).',
             style: TextStyle(color: Colors.grey)),
       ]),
     );

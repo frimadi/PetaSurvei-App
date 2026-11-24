@@ -1,10 +1,12 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'gudang.dart';
+import 'pengunggah.dart';
 
 class HalamanAntrean extends StatefulWidget {
   final Gudang gudang;
-  const HalamanAntrean({super.key, required this.gudang});
+  final Pengunggah pengunggah;
+  const HalamanAntrean({super.key, required this.gudang, required this.pengunggah});
 
   @override
   State<HalamanAntrean> createState() => _HalamanAntreanState();
@@ -13,8 +15,9 @@ class HalamanAntrean extends StatefulWidget {
 class _HalamanAntreanState extends State<HalamanAntrean> {
   final Set<String> _pilih = {};
 
-  Color _warna(String s) =>
-      s == 'terkirim' ? Colors.green : (s == 'gagal' ? Colors.red : Colors.orange);
+  Color _warna(String s) => s == 'terkirim'
+      ? Colors.green
+      : (s == 'gagal' ? Colors.red : (s == 'mengirim' ? Colors.blue : Colors.orange));
 
   List<Titik> _lama(List<Titik> d) {
     final hari = int.tryParse(widget.gudang.baca('hari', '7')) ?? 7;
@@ -41,6 +44,23 @@ class _HalamanAntreanState extends State<HalamanAntrean> {
       await widget.gudang.hapus(target);
       if (mounted) setState(_pilih.clear);
     }
+  }
+
+  Widget _statusKirim() {
+    final p = widget.pengunggah;
+    final n = p.jumlahBelumTerkirim;
+    if (!p.sibuk && n == 0 && p.pesan == null) return const SizedBox.shrink();
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      child: ListTile(
+        leading: p.sibuk
+            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5))
+            : const Icon(Icons.cloud_upload_outlined),
+        title: Text(p.sibuk ? 'Mengirim foto…' : '$n foto belum terkirim'),
+        subtitle: p.pesan != null ? Text(p.pesan!) : null,
+        trailing: p.sibuk ? null : TextButton(onPressed: p.kirimSemua, child: const Text('Kirim')),
+      ),
+    );
   }
 
   void _alih(String id) => setState(() {
@@ -75,7 +95,12 @@ class _HalamanAntreanState extends State<HalamanAntrean> {
               errorBuilder: (_, __, ___) => const SizedBox(width: 56, height: 56, child: Icon(Icons.broken_image))),
         ),
         title: Text(t.ruas),
-        subtitle: Text('${formatWaktu(t.waktu)} · ${t.kondisi}'),
+        subtitle: Text(
+            t.status == 'gagal' && t.galat.isNotEmpty
+                ? '${formatWaktu(t.waktu)} · ${t.galat}'
+                : '${formatWaktu(t.waktu)} · ${t.kondisi}',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis),
         trailing: _pilih.contains(t.id)
             ? const Icon(Icons.check_circle)
             : Text(t.status, style: TextStyle(color: _warna(t.status), fontWeight: FontWeight.w600)),
@@ -93,7 +118,7 @@ class _HalamanAntreanState extends State<HalamanAntrean> {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: widget.gudang,
+      animation: Listenable.merge([widget.gudang, widget.pengunggah]),
       builder: (context, _) {
         final d = widget.gudang.daftar;
         _pilih.removeWhere((id) => !d.any((t) => t.id == id));
@@ -117,6 +142,7 @@ class _HalamanAntreanState extends State<HalamanAntrean> {
           body: d.isEmpty
               ? const Center(child: Text('Belum ada foto.'))
               : ListView(children: [
+                  if (!mode) _statusKirim(),
                   if (lama.isNotEmpty && !mode) _spanduk(lama),
                   for (final t in d) _baris(t, mode),
                 ]),
@@ -142,7 +168,7 @@ class _HalamanDetailState extends State<HalamanDetail> {
   late final _arah = TextEditingController(text: widget.titik.bearing.toString());
   late String _kondisi = widget.titik.kondisi;
 
-  bool get _kunci => widget.titik.status == 'terkirim';
+  bool get _kunci => widget.titik.status == 'terkirim' || widget.titik.status == 'mengirim';
 
   @override
   void dispose() {
@@ -253,7 +279,7 @@ class _HalamanDetailState extends State<HalamanDetail> {
             if (_kunci)
               const Padding(
                 padding: EdgeInsets.only(top: 10),
-                child: Text('Data foto ini sudah terkirim dan tidak bisa diubah dari aplikasi.'),
+                child: Text('Data foto ini sudah terkirim atau sedang dikirim, jadi tidak bisa diubah dari aplikasi.'),
               ),
             const SizedBox(height: 16),
             Row(children: [

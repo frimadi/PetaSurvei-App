@@ -43,7 +43,8 @@ class Titik {
   String sta;
   String kondisi;
   String catatan;
-  String status; // menunggu | terkirim | gagal
+  String status; // menunggu | mengirim | terkirim | gagal
+  String galat;
 
   Titik({
     required this.id,
@@ -59,6 +60,7 @@ class Titik {
     required this.kondisi,
     this.catatan = '',
     this.status = 'menunggu',
+    this.galat = '',
   });
 
   Map<String, dynamic> toJson() => {
@@ -75,6 +77,7 @@ class Titik {
         'kondisi': kondisi,
         'catatan': catatan,
         'status': status,
+        'galat': galat,
       };
 
   factory Titik.dari(Map<String, dynamic> j) => Titik(
@@ -91,6 +94,7 @@ class Titik {
         kondisi: (j['kondisi'] as String?) ?? daftarKondisi.first,
         catatan: (j['catatan'] as String?) ?? '',
         status: (j['status'] as String?) ?? 'menunggu',
+        galat: (j['galat'] as String?) ?? '',
       );
 }
 
@@ -110,6 +114,10 @@ class Gudang extends ChangeNotifier {
     if (await f.exists()) {
       final j = jsonDecode(await f.readAsString()) as List;
       daftar = j.map((e) => Titik.dari(e as Map<String, dynamic>)).toList();
+      // Aplikasi sempat tertutup saat mengirim: kembalikan ke antrean.
+      for (final t in daftar) {
+        if (t.status == 'mengirim') t.status = 'menunggu';
+      }
     }
   }
 

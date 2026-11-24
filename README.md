@@ -1,7 +1,7 @@
-# Peta Survei - Aplikasi Android (tahap 1)
+# Peta Survei - Aplikasi Android (tahap 2)
 
 Aplikasi Flutter untuk mengambil foto survei jalan dengan koordinat GPS, arah kompas, nama jalan, STA, dan kondisi.
-Tahap 1: foto disimpan di HP dan bisa dilihat/diubah/dihapus. Unggah ke Drive (Apps Script) menyusul di tahap 2.
+Tahap 2: foto disimpan di HP, dikompres (1600 px), lalu dikirim ke Drive lewat Apps Script (`apps-script/kode.gs`). Tulisan pada foto (watermark) menyusul.
 
 ## Cara membangun APK (tanpa Flutter di laptop)
 1. Buat repo GitHub baru (misalnya `PetaSurvei-App`) dan unggah seluruh isi folder ini, termasuk folder `.github`, `app_src`, dan `tool`.
