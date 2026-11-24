@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'package:flutter/services.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 
 /// Arah kamera belakang (0-360 derajat dari utara), dihitung dari akselerometer
@@ -8,11 +9,18 @@ import 'package:sensors_plus/sensors_plus.dart';
 class Kompas {
   List<double>? _a, _m;
   double? arah;
+
+  /// Posisi fisik HP (potret/lanskap) dari akselerometer. Layar aplikasi terkunci
+  /// potret, jadi posisi ini dipakai untuk memberi tahu kamera arah foto.
+  DeviceOrientation orientasi = DeviceOrientation.portraitUp;
+  bool get lanskap =>
+      orientasi == DeviceOrientation.landscapeLeft || orientasi == DeviceOrientation.landscapeRight;
   StreamSubscription<dynamic>? _sa, _sm;
 
   void mulai() {
     _sa = accelerometerEventStream().listen((e) {
       _a = _haluskan(_a, [e.x, e.y, e.z]);
+      _hitungOrientasi();
       _hitung();
     }, onError: (_) {});
     _sm = magnetometerEventStream().listen((e) {
@@ -29,6 +37,19 @@ class Kompas {
   List<double> _haluskan(List<double>? lama, List<double> baru) => lama == null
       ? baru
       : [for (var i = 0; i < 3; i++) lama[i] + 0.12 * (baru[i] - lama[i])];
+
+  /// Selisih 3 m/s2 sebagai batas agar tidak bolak-balik saat HP miring ~45 derajat.
+  /// Saat HP hampir rata, orientasi terakhir dipertahankan.
+  void _hitungOrientasi() {
+    final a = _a;
+    if (a == null) return;
+    final x = a[0], y = a[1];
+    if (x.abs() > y.abs() + 3) {
+      orientasi = x > 0 ? DeviceOrientation.landscapeLeft : DeviceOrientation.landscapeRight;
+    } else if (y.abs() > x.abs() + 3) {
+      orientasi = y > 0 ? DeviceOrientation.portraitUp : DeviceOrientation.portraitDown;
+    }
+  }
 
   void _hitung() {
     final a = _a, m = _m;

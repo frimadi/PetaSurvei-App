@@ -4,6 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'gudang.dart';
+import 'halaman_antrean.dart';
 import 'kompas.dart';
 
 class HalamanSurvei extends StatefulWidget {
@@ -143,6 +144,7 @@ class _HalamanSurveiState extends State<HalamanSurvei> with WidgetsBindingObserv
     if (k == null || !k.value.isInitialized || k.value.isTakingPicture || _sibuk) return;
     if (_ruas.text.trim().isEmpty) {
       _pesan('Isi nama jalan dulu.');
+      _bukaIsian();
       return;
     }
     if (_pos == null) {
@@ -155,8 +157,17 @@ class _HalamanSurveiState extends State<HalamanSurvei> with WidgetsBindingObserv
     final pos = _pos!;
     final arah = _kompas.arah;
     final waktu = waktuSekarangIso();
+    // Layar terkunci potret, jadi kamera diberi tahu posisi HP saat ini
+    // (potret/lanskap) agar foto tersimpan dengan orientasi yang benar.
+    final posisiHp = _kompas.orientasi;
     try {
+      try {
+        await k.lockCaptureOrientation(posisiHp);
+      } catch (_) {}
       final x = await k.takePicture();
+      try {
+        await k.unlockCaptureOrientation();
+      } catch (_) {}
       final id = buatId(waktu);
       final nama = '$id.jpg';
       await File(x.path).copy('${widget.gudang.dirFoto.path}/$nama');
@@ -191,6 +202,7 @@ class _HalamanSurveiState extends State<HalamanSurvei> with WidgetsBindingObserv
     }
   }
 
+  /// Pratinjau utuh sesuai bentuk asli kamera (tidak dipotong), tanpa ditimpa kontrol.
   Widget _pratinjau() {
     final k = _kam;
     if (k == null || !k.value.isInitialized) {
@@ -202,24 +214,177 @@ class _HalamanSurveiState extends State<HalamanSurvei> with WidgetsBindingObserv
         ),
       );
     }
-    final u = k.value.previewSize!;
-    return ClipRect(
-      child: FittedBox(
-        fit: BoxFit.cover,
-        child: SizedBox(width: u.height, height: u.width, child: CameraPreview(k)),
+    // previewSize berbentuk lanskap (sensor), layar aplikasi potret: rasio dibalik.
+    // buildPreview dipakai langsung (bukan CameraPreview) agar pratinjau tidak ikut
+    // berputar saat orientasi foto dikunci untuk jepretan lanskap.
+    return Center(
+      child: AspectRatio(
+        aspectRatio: 1 / k.value.aspectRatio,
+        child: k.buildPreview(),
       ),
     );
   }
 
-  Widget _chip(String teks, Color warna) => Container(
+  Widget _chip(String teks, Color warna, {IconData? ikon}) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(color: warna, borderRadius: BorderRadius.circular(12)),
-        child: Text(teks, style: const TextStyle(color: Colors.white, fontSize: 13)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (ikon != null) ...[Icon(ikon, size: 14, color: Colors.white), const SizedBox(width: 4)],
+          Text(teks, style: const TextStyle(color: Colors.white, fontSize: 13)),
+        ]),
       );
+
+  /// Panel isian (nama jalan, kondisi, STA, catatan) yang naik dari bawah.
+  Future<void> _bukaIsian() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (c) => Padding(
+        padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + MediaQuery.of(c).viewInsets.bottom),
+        child: StatefulBuilder(
+          builder: (c, setS) => SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: _ruas,
+                  autofocus: _ruas.text.trim().isEmpty,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(labelText: 'Nama jalan', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final k in daftarKondisi)
+                      ChoiceChip(
+                        label: Text(k),
+                        selected: _kondisi == k,
+                        onSelected: (_) {
+                          setS(() {});
+                          setState(() => _kondisi = k);
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _sta,
+                      decoration: const InputDecoration(
+                          labelText: 'STA (opsional)', hintText: '1+250', border: OutlineInputBorder()),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 2,
+                    child: TextField(
+                      controller: _catatan,
+                      decoration:
+                          const InputDecoration(labelText: 'Catatan (opsional)', border: OutlineInputBorder()),
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: FilledButton(onPressed: () => Navigator.pop(c), child: const Text('Selesai')),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  /// Miniatur foto terakhir membuka detailnya; dari sana bisa digeser ke foto lain.
+  Future<void> _bukaDetail() async {
+    final semua = List<Titik>.of(widget.gudang.daftar);
+    if (semua.isEmpty) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => HalamanDetail(gudang: widget.gudang, daftar: semua, awal: 0)),
+    );
+    if (mounted) setState(() {});
+  }
+
+  Widget _panelBawah(Titik? terakhir) {
+    final kosong = _ruas.text.trim().isEmpty;
+    final ringkas = [
+      kosong ? 'Isi nama jalan' : _ruas.text.trim(),
+      _kondisi,
+      if (_sta.text.trim().isNotEmpty) 'STA ${_sta.text.trim()}',
+    ].join(' · ');
+    return Container(
+      color: Theme.of(context).colorScheme.surface,
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: _bukaIsian,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              border: Border.all(color: kosong ? Colors.red : Colors.black26),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(children: [
+              Icon(Icons.edit_outlined, size: 20, color: kosong ? Colors.red : null),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(ringkas,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 15, color: kosong ? Colors.red : null)),
+              ),
+              const Icon(Icons.expand_less),
+            ]),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: terakhir == null ? null : _bukaDetail,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SizedBox(
+                width: 56,
+                height: 56,
+                child: terakhir == null
+                    ? Container(color: Colors.black12, child: const Icon(Icons.photo_outlined))
+                    : Image.file(File(widget.gudang.jalur(terakhir)),
+                        fit: BoxFit.cover,
+                        cacheWidth: 200,
+                        errorBuilder: (_, __, ___) => Container(color: Colors.black12, child: const Icon(Icons.broken_image))),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: SizedBox(
+              height: 56,
+              child: FilledButton.icon(
+                onPressed: _sibuk ? null : _ambil,
+                icon: const Icon(Icons.camera_alt),
+                label: Text(_sibuk ? 'Menyimpan…' : 'Ambil foto'),
+              ),
+            ),
+          ),
+        ]),
+      ]),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final tinggi = MediaQuery.of(context).size.height * 0.42;
     final d = widget.gudang.daftar;
     final terakhir = d.isEmpty ? null : d.first;
     final akurasi = _pos?.accuracy;
@@ -229,11 +394,9 @@ class _HalamanSurveiState extends State<HalamanSurvei> with WidgetsBindingObserv
         : (akurasi <= 10 ? Colors.green : (akurasi <= 20 ? Colors.orange : Colors.red));
     return Scaffold(
       body: SafeArea(
-        child: ListView(
-          padding: EdgeInsets.zero,
+        child: Column(
           children: [
-            SizedBox(
-              height: tinggi,
+            Expanded(
               child: Container(
                 color: Colors.black,
                 child: Stack(
@@ -243,83 +406,22 @@ class _HalamanSurveiState extends State<HalamanSurvei> with WidgetsBindingObserv
                     Positioned(
                       left: 8,
                       top: 8,
-                      child: Wrap(spacing: 6, children: [
+                      child: Wrap(spacing: 6, runSpacing: 6, children: [
                         _chip(
                             akurasi == null
                                 ? (_galatGps ?? 'Mencari GPS…')
                                 : 'GPS ±${akurasi.round()} m',
                             warnaGps),
                         _chip(arah == null ? 'Arah —' : 'Arah ${arah.round()}°', Colors.blueGrey),
+                        _chip(_kompas.lanskap ? 'Foto lanskap' : 'Foto potret', Colors.black54,
+                            ikon: Icons.screen_rotation),
                       ]),
                     ),
-                    if (terakhir != null)
-                      Positioned(
-                        left: 8,
-                        bottom: 8,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: Image.file(File(widget.gudang.jalur(terakhir)),
-                              width: 64, height: 64, fit: BoxFit.cover, cacheWidth: 200),
-                        ),
-                      ),
                   ],
                 ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextField(
-                    controller: _ruas,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: const InputDecoration(labelText: 'Nama jalan', border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      for (final k in daftarKondisi)
-                        ChoiceChip(
-                          label: Text(k),
-                          selected: _kondisi == k,
-                          onSelected: (_) => setState(() => _kondisi = k),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _sta,
-                        decoration: const InputDecoration(
-                            labelText: 'STA (opsional)', hintText: '1+250', border: OutlineInputBorder()),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 2,
-                      child: TextField(
-                        controller: _catatan,
-                        decoration: const InputDecoration(
-                            labelText: 'Catatan (opsional)', border: OutlineInputBorder()),
-                      ),
-                    ),
-                  ]),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: FilledButton.icon(
-                      onPressed: _sibuk ? null : _ambil,
-                      icon: const Icon(Icons.camera_alt),
-                      label: Text(_sibuk ? 'Menyimpan…' : 'Ambil foto'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            _panelBawah(terakhir),
           ],
         ),
       ),

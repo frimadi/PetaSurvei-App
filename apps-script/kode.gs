@@ -21,6 +21,9 @@ function doPost(e) {
     const petugas = cariPetugas(data.kode);
     if (!petugas) return jawab({ ok: false, pesan: 'Kode tidak valid atau tidak aktif.' });
 
+    // Perubahan data foto yang sudah terunggah (tanpa mengirim ulang fotonya)
+    if (data.aksi === 'ubah') return ubahTitik(data, petugas, kunci);
+
     const t = periksaTitik(data.titik);
     const foto = data.foto || {};
     if (['image/jpeg', 'image/png'].indexOf(foto.mime) < 0) throw new Error('Jenis foto harus JPEG atau PNG.');
@@ -42,7 +45,7 @@ function doPost(e) {
 
     // 2. Tambah titik ke file sesi petugas pada tanggal itu
     const tanggal = t.waktu.substring(0, 10);
-    const namaSesi = tanggal + '_' + petugas.nama.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.json';
+    const namaSesi = namaFileSesi(tanggal, petugas.nama);
     const ada = folderSesi.getFilesByName(namaSesi);
     let berkas = ada.hasNext() ? ada.next() : null;
     const sesi = berkas ? JSON.parse(berkas.getBlob().getDataAsString()) : { versi: 1, petugas: petugas.nama, tanggal: tanggal, titik: [] };
@@ -59,6 +62,34 @@ function doPost(e) {
   } finally {
     try { kunci.releaseLock(); } catch (x) {}
   }
+}
+
+function namaFileSesi(tanggal, namaPetugas) {
+  return tanggal + '_' + namaPetugas.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.json';
+}
+
+/**
+ * Mengubah data satu titik (nama jalan, STA, kondisi, catatan, arah) di file sesi.
+ * Titik dicari lewat id pada file sesi petugas yang sama di tanggal foto diambil.
+ * Koordinat, waktu, dan foto tidak diubah.
+ */
+function ubahTitik(data, petugas, kunci) {
+  const t = periksaTitik(data.titik);
+  kunci.waitLock(20000);
+  const folderSesi = subfolder(DriveApp.getFolderById(ID_FOLDER), 'sesi');
+  const namaSesi = namaFileSesi(t.waktu.substring(0, 10), petugas.nama);
+  const ada = folderSesi.getFilesByName(namaSesi);
+  if (!ada.hasNext()) return jawab({ ok: false, pesan: 'File sesi tidak ditemukan untuk petugas ini.' });
+  const berkas = ada.next();
+  const sesi = JSON.parse(berkas.getBlob().getDataAsString());
+  let x = null;
+  for (let i = 0; i < sesi.titik.length; i++) {
+    if (sesi.titik[i].id === t.id) { x = sesi.titik[i]; break; }
+  }
+  if (!x) return jawab({ ok: false, pesan: 'Titik tidak ditemukan di Drive.' });
+  x.ruas = t.ruas; x.sta = t.sta; x.kondisi = t.kondisi; x.catatan = t.catatan; x.bearing = t.bearing;
+  berkas.setContent(JSON.stringify(sesi, null, 2));
+  return jawab({ ok: true, id: t.id, ubah: true, sesi: namaSesi });
 }
 
 function cariPetugas(kode) {

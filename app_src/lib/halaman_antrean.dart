@@ -49,14 +49,19 @@ class _HalamanAntreanState extends State<HalamanAntrean> {
   Widget _statusKirim() {
     final p = widget.pengunggah;
     final n = p.jumlahBelumTerkirim;
-    if (!p.sibuk && n == 0 && p.pesan == null) return const SizedBox.shrink();
+    final u = p.jumlahUbahTertunda;
+    if (!p.sibuk && n == 0 && u == 0 && p.pesan == null) return const SizedBox.shrink();
+    final ringkas = [
+      if (n > 0) '$n foto belum terkirim',
+      if (u > 0) '$u perubahan belum terkirim',
+    ].join(' · ');
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
       child: ListTile(
         leading: p.sibuk
             ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5))
             : const Icon(Icons.cloud_upload_outlined),
-        title: Text(p.sibuk ? 'Mengirim foto…' : '$n foto belum terkirim'),
+        title: Text(p.sibuk ? 'Mengirim…' : (ringkas.isEmpty ? 'Semua terkirim' : ringkas)),
         subtitle: p.pesan != null ? Text(p.pesan!) : null,
         trailing: p.sibuk ? null : TextButton(onPressed: p.kirimSemua, child: const Text('Kirim')),
       ),
@@ -96,20 +101,29 @@ class _HalamanAntreanState extends State<HalamanAntrean> {
         ),
         title: Text(t.ruas),
         subtitle: Text(
-            t.status == 'gagal' && t.galat.isNotEmpty
+            (t.status == 'gagal' || t.ubahTertunda) && t.galat.isNotEmpty
                 ? '${formatWaktu(t.waktu)} · ${t.galat}'
                 : '${formatWaktu(t.waktu)} · ${t.kondisi}',
             maxLines: 2,
             overflow: TextOverflow.ellipsis),
         trailing: _pilih.contains(t.id)
             ? const Icon(Icons.check_circle)
-            : Text(t.status, style: TextStyle(color: _warna(t.status), fontWeight: FontWeight.w600)),
+            : (t.status == 'terkirim' && t.ubahTertunda)
+                ? Text(t.galat.isNotEmpty ? 'ubah gagal' : 'ubah menunggu',
+                    style: TextStyle(
+                        color: t.galat.isNotEmpty ? Colors.red : Colors.orange, fontWeight: FontWeight.w600))
+                : Text(t.status, style: TextStyle(color: _warna(t.status), fontWeight: FontWeight.w600)),
         onTap: () {
           if (mode) {
             _alih(t.id);
           } else {
-            Navigator.push(context,
-                MaterialPageRoute(builder: (_) => HalamanDetail(gudang: widget.gudang, titik: t)));
+            final semua = List<Titik>.of(widget.gudang.daftar);
+            final ix = semua.indexOf(t);
+            Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) =>
+                        HalamanDetail(gudang: widget.gudang, daftar: semua, awal: ix < 0 ? 0 : ix)));
           }
         },
         onLongPress: () => _alih(t.id),
@@ -152,57 +166,133 @@ class _HalamanAntreanState extends State<HalamanAntrean> {
   }
 }
 
+/// Kumpulan isian satu foto di layar detail (disimpan agar tidak hilang saat digeser).
+class _Isian {
+  final TextEditingController ruas, sta, catatan, arah;
+  String kondisi;
+  _Isian(Titik t)
+      : ruas = TextEditingController(text: t.ruas),
+        sta = TextEditingController(text: t.sta),
+        catatan = TextEditingController(text: t.catatan),
+        arah = TextEditingController(text: t.bearing.toString()),
+        kondisi = t.kondisi;
+
+  void buang() {
+    ruas.dispose();
+    sta.dispose();
+    catatan.dispose();
+    arah.dispose();
+  }
+}
+
+/// Detail foto. Bisa digeser ke foto sebelumnya/berikutnya dalam daftar.
+/// Semua kolom bisa diubah; untuk foto yang sudah terkirim, perubahan dikirim ulang
+/// ke Drive (hanya datanya, bukan fotonya).
 class HalamanDetail extends StatefulWidget {
   final Gudang gudang;
-  final Titik titik;
-  const HalamanDetail({super.key, required this.gudang, required this.titik});
+  final List<Titik> daftar;
+  final int awal;
+  const HalamanDetail({super.key, required this.gudang, required this.daftar, required this.awal});
 
   @override
   State<HalamanDetail> createState() => _HalamanDetailState();
 }
 
 class _HalamanDetailState extends State<HalamanDetail> {
-  late final _ruas = TextEditingController(text: widget.titik.ruas);
-  late final _sta = TextEditingController(text: widget.titik.sta);
-  late final _catatan = TextEditingController(text: widget.titik.catatan);
-  late final _arah = TextEditingController(text: widget.titik.bearing.toString());
-  late String _kondisi = widget.titik.kondisi;
+  late final List<Titik> _d = List<Titik>.of(widget.daftar);
+  late final PageController _pc = PageController(initialPage: widget.awal);
+  final Map<String, _Isian> _isian = {};
+  late String _aktif = _d[widget.awal].id;
 
-  bool get _kunci => widget.titik.status == 'terkirim' || widget.titik.status == 'mengirim';
+  _Isian _ambil(Titik t) => _isian.putIfAbsent(t.id, () => _Isian(t));
+
+  Titik? _cari(String id) {
+    for (final t in _d) {
+      if (t.id == id) return t;
+    }
+    return null;
+  }
 
   @override
   void dispose() {
-    _ruas.dispose();
-    _sta.dispose();
-    _catatan.dispose();
-    _arah.dispose();
+    _pc.dispose();
+    for (final i in _isian.values) {
+      i.buang();
+    }
     super.dispose();
   }
 
-  Future<void> _simpan() async {
-    final a = int.tryParse(_arah.text.trim());
+  void _pesan(String t) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t)));
+
+  /// Menyimpan isian foto [id] bila ada yang berubah. Mengembalikan false bila isian tidak sah.
+  Future<bool> _simpanId(String id, {bool tampilPesan = true}) async {
+    final t = _cari(id);
+    final i = _isian[id];
+    if (t == null || i == null) return true;
+    if (!widget.gudang.daftar.contains(t)) return true;
+    final ruas = i.ruas.text.trim();
+    final sta = i.sta.text.trim();
+    final cat = i.catatan.text.trim();
+    final a = int.tryParse(i.arah.text.trim());
+    final sama = ruas == t.ruas &&
+        sta == t.sta &&
+        cat == t.catatan &&
+        i.kondisi == t.kondisi &&
+        a != null &&
+        a % 360 == t.bearing;
+    if (sama) return true;
     if (a == null || a < 0 || a > 360) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Arah harus 0-360.')));
-      return;
+      if (tampilPesan && mounted) _pesan('Perubahan tidak disimpan: arah harus 0-360.');
+      return false;
     }
-    final t = widget.titik;
-    t.ruas = _ruas.text.trim();
-    t.sta = _sta.text.trim();
-    t.catatan = _catatan.text.trim();
-    t.kondisi = _kondisi;
+    if (ruas.isEmpty) {
+      if (tampilPesan && mounted) _pesan('Perubahan tidak disimpan: nama jalan tidak boleh kosong.');
+      return false;
+    }
+    if (a % 360 != t.bearing) t.arahTerbaca = true;
+    t.ruas = ruas;
+    t.sta = sta;
+    t.catatan = cat;
+    t.kondisi = i.kondisi;
     t.bearing = a % 360;
-    t.arahTerbaca = true;
+    // Foto yang sudah ada di Drive: tandai agar perubahannya ikut dikirim.
+    if (t.status == 'terkirim' || t.status == 'mengirim') {
+      t.ubahTertunda = true;
+      t.galat = '';
+    }
     await widget.gudang.perbarui();
-    if (mounted) Navigator.pop(context);
+    return true;
+  }
+
+  Future<void> _simpanTombol() async {
+    final t = _cari(_aktif);
+    if (t == null) return;
+    final ok = await _simpanId(_aktif);
+    if (ok && mounted) {
+      final kirim = t.status == 'terkirim' || t.status == 'mengirim';
+      _pesan(kirim ? 'Tersimpan. Perubahan akan dikirim ke Drive.' : 'Tersimpan.');
+    }
+  }
+
+  Future<void> _ganti(int indeks) async {
+    if (indeks < 0 || indeks >= _d.length) return;
+    final lama = _aktif;
+    _aktif = _d[indeks].id;
+    await _simpanId(lama);
+    if (mounted) setState(() {});
   }
 
   Future<void> _hapus() async {
+    final t = _cari(_aktif);
+    if (t == null) return;
+    final kunci = t.status == 'terkirim' || t.status == 'mengirim';
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
         title: const Text('Hapus foto ini dari HP?'),
-        content: Text(_kunci
-            ? 'Foto sudah terkirim. Hanya salinan di HP yang dihapus.'
+        content: Text(kunci
+            ? 'Hanya salinan di HP yang dihapus. Foto di Drive tidak ikut terhapus.'
             : 'Foto belum terkirim, jadi akan hilang sepenuhnya.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Batal')),
@@ -210,86 +300,157 @@ class _HalamanDetailState extends State<HalamanDetail> {
         ],
       ),
     );
-    if (ok == true) {
-      await widget.gudang.hapus([widget.titik]);
-      if (mounted) Navigator.pop(context);
+    if (ok != true) return;
+    final idx = _d.indexOf(t);
+    await widget.gudang.hapus([t]);
+    if (!mounted) return;
+    _d.removeAt(idx);
+    if (_d.isEmpty) {
+      Navigator.pop(context);
+      return;
     }
+    final baru = idx >= _d.length ? _d.length - 1 : idx;
+    _aktif = _d[baru].id;
+    setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _pc.hasClients) _pc.jumpToPage(baru);
+    });
+  }
+
+  String _ketStatus(Titik t) {
+    if (t.status == 'terkirim') {
+      if (!t.ubahTertunda) return 'Sudah terkirim ke Drive.';
+      return t.galat.isNotEmpty
+          ? 'Perubahan gagal dikirim: ${t.galat}'
+          : 'Perubahan menunggu dikirim ke Drive.';
+    }
+    if (t.status == 'mengirim') return 'Sedang dikirim…';
+    if (t.status == 'gagal') return 'Gagal dikirim: ${t.galat}';
+    return 'Menunggu dikirim.';
+  }
+
+  Widget _halaman(Titik t) {
+    final i = _ambil(t);
+    final berkas = File(widget.gudang.jalur(t));
+    return ListView(key: ValueKey(t.id), children: [
+      GestureDetector(
+        onTap: () => Navigator.push(
+            context, MaterialPageRoute(builder: (_) => _FotoPenuh(berkas: berkas))),
+        child: Container(
+          height: 300,
+          color: Colors.black,
+          alignment: Alignment.center,
+          child: Image.file(berkas,
+              fit: BoxFit.contain,
+              cacheWidth: 1200,
+              errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white54, size: 48)),
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Koordinat ${t.lat.toStringAsFixed(6)}, ${t.lon.toStringAsFixed(6)}'
+              '${t.akurasi != null ? ' (±${t.akurasi!.round()} m)' : ''}'),
+          const SizedBox(height: 4),
+          Text(_ketStatus(t),
+              style: TextStyle(
+                  color: (t.galat.isNotEmpty && (t.status == 'gagal' || t.ubahTertunda))
+                      ? Colors.red
+                      : Colors.black54)),
+          if (!t.arahTerbaca)
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text('Arah kompas tidak terbaca saat foto diambil. Isi manual.',
+                  style: TextStyle(color: Colors.orange)),
+            ),
+          const SizedBox(height: 12),
+          TextField(
+              controller: i.ruas,
+              decoration: const InputDecoration(labelText: 'Nama jalan', border: OutlineInputBorder())),
+          const SizedBox(height: 10),
+          Wrap(spacing: 8, children: [
+            for (final k in daftarKondisi)
+              ChoiceChip(
+                label: Text(k),
+                selected: i.kondisi == k,
+                onSelected: (_) => setState(() => i.kondisi = k),
+              ),
+          ]),
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(
+                child: TextField(
+                    controller: i.arah,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Arah (0-360°)', border: OutlineInputBorder()))),
+            const SizedBox(width: 8),
+            Expanded(
+                child: TextField(
+                    controller: i.sta,
+                    decoration: const InputDecoration(labelText: 'STA', border: OutlineInputBorder()))),
+          ]),
+          const SizedBox(height: 10),
+          TextField(
+              controller: i.catatan,
+              decoration: const InputDecoration(labelText: 'Catatan', border: OutlineInputBorder())),
+          const SizedBox(height: 16),
+          Row(children: [
+            Expanded(child: FilledButton(onPressed: _simpanTombol, child: const Text('Simpan'))),
+            const SizedBox(width: 8),
+            Expanded(child: OutlinedButton(onPressed: _hapus, child: const Text('Hapus dari HP'))),
+          ]),
+          const SizedBox(height: 24),
+        ]),
+      ),
+    ]);
   }
 
   @override
   Widget build(BuildContext context) {
-    final t = widget.titik;
-    return Scaffold(
-      appBar: AppBar(title: Text(formatWaktu(t.waktu))),
-      body: ListView(children: [
-        SizedBox(
-          height: 300,
-          child: Container(
-            color: Colors.black,
-            child: InteractiveViewer(
-              child: Image.file(File(widget.gudang.jalur(t)), fit: BoxFit.contain),
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Koordinat ${t.lat.toStringAsFixed(6)}, ${t.lon.toStringAsFixed(6)}'
-                '${t.akurasi != null ? ' (±${t.akurasi!.round()} m)' : ''}'),
-            if (!t.arahTerbaca)
-              const Padding(
-                padding: EdgeInsets.only(top: 6),
-                child: Text('Arah kompas tidak terbaca saat foto diambil. Isi manual.',
-                    style: TextStyle(color: Colors.orange)),
-              ),
-            const SizedBox(height: 12),
-            TextField(
-                controller: _ruas,
-                enabled: !_kunci,
-                decoration: const InputDecoration(labelText: 'Nama jalan', border: OutlineInputBorder())),
-            const SizedBox(height: 10),
-            Wrap(spacing: 8, children: [
-              for (final k in daftarKondisi)
-                ChoiceChip(
-                  label: Text(k),
-                  selected: _kondisi == k,
-                  onSelected: _kunci ? null : (_) => setState(() => _kondisi = k),
-                ),
-            ]),
-            const SizedBox(height: 10),
-            Row(children: [
-              Expanded(
-                  child: TextField(
-                      controller: _arah,
-                      enabled: !_kunci,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'Arah (0-360°)', border: OutlineInputBorder()))),
-              const SizedBox(width: 8),
-              Expanded(
-                  child: TextField(
-                      controller: _sta,
-                      enabled: !_kunci,
-                      decoration: const InputDecoration(labelText: 'STA', border: OutlineInputBorder()))),
-            ]),
-            const SizedBox(height: 10),
-            TextField(
-                controller: _catatan,
-                enabled: !_kunci,
-                decoration: const InputDecoration(labelText: 'Catatan', border: OutlineInputBorder())),
-            if (_kunci)
-              const Padding(
-                padding: EdgeInsets.only(top: 10),
-                child: Text('Data foto ini sudah terkirim atau sedang dikirim, jadi tidak bisa diubah dari aplikasi.'),
-              ),
-            const SizedBox(height: 16),
-            Row(children: [
-              if (!_kunci) Expanded(child: FilledButton(onPressed: _simpan, child: const Text('Simpan'))),
-              if (!_kunci) const SizedBox(width: 8),
-              Expanded(child: OutlinedButton(onPressed: _hapus, child: const Text('Hapus dari HP'))),
-            ]),
+    final indeks = _d.indexWhere((t) => t.id == _aktif);
+    final t = indeks >= 0 ? _d[indeks] : _d.first;
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) _simpanId(_aktif, tampilPesan: false);
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(formatWaktu(t.waktu)),
+            Text('${(indeks < 0 ? 0 : indeks) + 1} dari ${_d.length} · geser untuk foto lain',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal)),
           ]),
         ),
-      ]),
+        body: AnimatedBuilder(
+          animation: widget.gudang,
+          builder: (context, _) => PageView.builder(
+            controller: _pc,
+            itemCount: _d.length,
+            onPageChanged: _ganti,
+            itemBuilder: (context, i) => _halaman(_d[i]),
+          ),
+        ),
+      ),
     );
   }
+}
+
+/// Foto layar penuh, bisa diperbesar dengan dua jari.
+class _FotoPenuh extends StatelessWidget {
+  final File berkas;
+  const _FotoPenuh({required this.berkas});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white),
+        body: Center(
+          child: InteractiveViewer(
+            minScale: 1,
+            maxScale: 6,
+            child: Image.file(berkas, fit: BoxFit.contain, cacheWidth: 2400),
+          ),
+        ),
+      );
 }

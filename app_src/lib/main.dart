@@ -54,7 +54,7 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
 
   // Foto baru (status menunggu) langsung dikirim.
   void _cek() {
-    if (widget.gudang.daftar.any((t) => t.status == 'menunggu')) {
+    if (widget.gudang.daftar.any((t) => t.status == 'menunggu' || (t.ubahTertunda && t.galat.isEmpty))) {
       widget.pengunggah.kirimSemua();
     }
   }

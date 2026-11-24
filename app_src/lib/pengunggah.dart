@@ -35,6 +35,10 @@ class Pengunggah extends ChangeNotifier {
   int get jumlahBelumTerkirim =>
       gudang.daftar.where((t) => t.status != 'terkirim').length;
 
+  /// Foto sudah terkirim, tetapi datanya diubah di HP dan perubahan belum sampai ke Drive.
+  int get jumlahUbahTertunda =>
+      gudang.daftar.where((t) => t.status == 'terkirim' && t.ubahTertunda).length;
+
   void _setPesan(String? p) {
     pesan = p;
     notifyListeners();
@@ -50,13 +54,22 @@ class Pengunggah extends ChangeNotifier {
     return null;
   }
 
-  /// Mengirim semua foto berstatus menunggu/gagal, satu per satu.
+  Titik? _berikutUbah(Set<String> dicoba) {
+    for (final t in gudang.daftar.reversed) {
+      if (t.status == 'terkirim' && t.ubahTertunda && !dicoba.contains(t.id)) return t;
+    }
+    return null;
+  }
+
+  String _tandaUbah(Titik t) => '${t.ruas}|${t.sta}|${t.kondisi}|${t.catatan}|${t.bearing}';
+
+  /// Mengirim semua foto berstatus menunggu/gagal, lalu perubahan data foto yang sudah terkirim.
   /// Berhenti pada kegagalan pertama (mis. tanpa sinyal) agar tidak memboroskan baterai.
   Future<void> kirimSemua() async {
     if (sibuk) return;
     final url = gudang.baca('url').trim();
     final kode = gudang.baca('kode').trim();
-    if (_berikut({}) == null) return;
+    if (_berikut({}) == null && _berikutUbah({}) == null) return;
     if (url.isEmpty || kode.isEmpty) {
       _setPesan('Isi alamat skrip dan kode akses di Pengaturan agar foto bisa dikirim.');
       return;
@@ -65,13 +78,20 @@ class Pengunggah extends ChangeNotifier {
     pesan = null;
     notifyListeners();
     final dicoba = <String>{};
+    final dicobaUbah = <String>{};
     try {
-      while (true) {
+      var lanjut = true;
+      while (lanjut) {
         final t = _berikut(dicoba);
         if (t == null) break;
         dicoba.add(t.id);
-        final lanjut = await _kirimSatu(t, url, kode);
-        if (!lanjut) break;
+        lanjut = await _kirimSatu(t, url, kode);
+      }
+      while (lanjut) {
+        final t = _berikutUbah(dicobaUbah);
+        if (t == null) break;
+        dicobaUbah.add(t.id);
+        lanjut = await _kirimUbah(t, url, kode);
       }
     } finally {
       sibuk = false;
@@ -129,6 +149,57 @@ class Pengunggah extends ChangeNotifier {
     } catch (e) {
       return await _gagal(t, 'Gagal mengirim.');
     }
+  }
+
+  /// Mengirim perubahan data (bukan fotonya) untuk foto yang sudah ada di Drive.
+  Future<bool> _kirimUbah(Titik t, String url, String kode) async {
+    final tanda = _tandaUbah(t);
+    t.galat = '';
+    try {
+      final badan = jsonEncode({
+        'aksi': 'ubah',
+        'kode': kode,
+        'titik': {
+          'id': t.id,
+          'waktu': t.waktu,
+          'lat': t.lat,
+          'lon': t.lon,
+          'akurasi': t.akurasi,
+          'bearing': t.bearing,
+          'ruas': t.ruas,
+          'sta': t.sta,
+          'kondisi': t.kondisi,
+          'catatan': t.catatan,
+        },
+      });
+      final j = await _kirim(url, badan);
+      if (j['ok'] == true) {
+        // Bila data diubah lagi saat pengiriman berlangsung, tanda tetap menyala.
+        if (_tandaUbah(t) == tanda) t.ubahTertunda = false;
+        t.galat = '';
+        await gudang.perbarui();
+        return true;
+      }
+      var p = (j['pesan'] ?? j['galat'] ?? 'Ditolak oleh skrip').toString();
+      if (p.contains('Jenis foto')) {
+        p = 'Skrip Apps Script belum diperbarui ke versi baru (perlu deploy Versi baru).';
+      }
+      return await _gagalUbah(t, p);
+    } on TimeoutException {
+      return await _gagalUbah(t, 'Waktu habis. Sinyal lemah?');
+    } on SocketException {
+      return await _gagalUbah(t, 'Tidak ada koneksi internet.');
+    } on FormatException {
+      return await _gagalUbah(t, 'Jawaban skrip bukan JSON. Periksa alamat /exec dan akses "Siapa saja".');
+    } catch (e) {
+      return await _gagalUbah(t, 'Gagal mengirim perubahan.');
+    }
+  }
+
+  Future<bool> _gagalUbah(Titik t, String alasan) async {
+    t.galat = alasan;
+    await gudang.perbarui();
+    return false;
   }
 
   Future<bool> _gagal(Titik t, String alasan) async {

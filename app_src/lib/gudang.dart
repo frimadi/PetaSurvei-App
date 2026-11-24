@@ -45,6 +45,7 @@ class Titik {
   String catatan;
   String status; // menunggu | mengirim | terkirim | gagal
   String galat;
+  bool ubahTertunda; // data diubah setelah terkirim, perubahan belum sampai ke Drive
 
   Titik({
     required this.id,
@@ -61,6 +62,7 @@ class Titik {
     this.catatan = '',
     this.status = 'menunggu',
     this.galat = '',
+    this.ubahTertunda = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -78,6 +80,7 @@ class Titik {
         'catatan': catatan,
         'status': status,
         'galat': galat,
+        'ubahTertunda': ubahTertunda,
       };
 
   factory Titik.dari(Map<String, dynamic> j) => Titik(
@@ -95,6 +98,7 @@ class Titik {
         catatan: (j['catatan'] as String?) ?? '',
         status: (j['status'] as String?) ?? 'menunggu',
         galat: (j['galat'] as String?) ?? '',
+        ubahTertunda: (j['ubahTertunda'] as bool?) ?? false,
       );
 }
 
