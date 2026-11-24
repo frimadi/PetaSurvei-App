@@ -24,6 +24,18 @@ jobs:
           cp -r app_src/lib build_app/lib
           cp app_src/pubspec.yaml build_app/pubspec.yaml
           python3 tool/patch_manifest.py build_app/android/app/src/main/AndroidManifest.xml
+      - name: Matikan lint-vital (bug plugin kamera)
+        run: |
+          mkdir -p ~/.gradle/init.d
+          cat > ~/.gradle/init.d/nolint.gradle <<'EOF'
+          allprojects {
+            tasks.configureEach { t ->
+              if (t.name.startsWith("lintVital")) {
+                t.enabled = false
+              }
+            }
+          }
+          EOF
       - name: Bangun APK
         working-directory: build_app
         run: |
