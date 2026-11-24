@@ -1,0 +1,128 @@
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'gudang.dart';
+
+class HalamanPengaturan extends StatefulWidget {
+  final Gudang gudang;
+  const HalamanPengaturan({super.key, required this.gudang});
+
+  @override
+  State<HalamanPengaturan> createState() => _HalamanPengaturanState();
+}
+
+class _HalamanPengaturanState extends State<HalamanPengaturan> {
+  Gudang get g => widget.gudang;
+  late final _url = TextEditingController(text: g.baca('url'));
+  late final _kode = TextEditingController(text: g.baca('kode'));
+  late bool _tulisan = g.baca('tulisan', '0') == '1';
+  late String _ukuran = g.baca('ukuran', 'Sedang');
+  late String _hari = g.baca('hari', '7');
+  String? _hasil;
+  bool _menguji = false;
+
+  @override
+  void dispose() {
+    _url.dispose();
+    _kode.dispose();
+    super.dispose();
+  }
+
+  Future<void> _uji() async {
+    final u = _url.text.trim();
+    if (u.isEmpty) {
+      setState(() => _hasil = 'Isi alamat skrip dulu.');
+      return;
+    }
+    setState(() {
+      _menguji = true;
+      _hasil = 'Menguji…';
+    });
+    try {
+      final r = await http.get(Uri.parse(u)).timeout(const Duration(seconds: 20));
+      final j = jsonDecode(r.body);
+      setState(() => _hasil = (j is Map && j['ok'] == true)
+          ? 'Terhubung: skrip aktif.'
+          : 'Skrip menjawab, tetapi bukan jawaban yang diharapkan.');
+    } catch (e) {
+      setState(() => _hasil = 'Gagal terhubung. Periksa alamat dan koneksi.');
+    } finally {
+      if (mounted) setState(() => _menguji = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Pengaturan')),
+      body: ListView(padding: const EdgeInsets.all(16), children: [
+        TextField(
+          controller: _url,
+          keyboardType: TextInputType.url,
+          decoration: const InputDecoration(
+              labelText: 'Alamat skrip (berakhiran /exec)', border: OutlineInputBorder()),
+          onChanged: (v) => g.tulis('url', v.trim()),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _kode,
+          obscureText: true,
+          decoration: const InputDecoration(labelText: 'Kode akses petugas', border: OutlineInputBorder()),
+          onChanged: (v) => g.tulis('kode', v.trim()),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.tonal(onPressed: _menguji ? null : _uji, child: const Text('Uji koneksi')),
+        ),
+        if (_hasil != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(_hasil!)),
+        const Divider(height: 32),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Tulisan pada foto'),
+          subtitle: const Text('Nama jalan, koordinat, arah, dan waktu ditempel pada foto saat dikirim. Belum aktif di versi ini.'),
+          value: _tulisan,
+          onChanged: (v) {
+            setState(() => _tulisan = v);
+            g.tulis('tulisan', v ? '1' : '0');
+          },
+        ),
+        const SizedBox(height: 8),
+        const Text('Ukuran huruf tulisan'),
+        const SizedBox(height: 6),
+        SegmentedButton<String>(
+          segments: const [
+            ButtonSegment(value: 'Kecil', label: Text('Kecil')),
+            ButtonSegment(value: 'Sedang', label: Text('Sedang')),
+            ButtonSegment(value: 'Besar', label: Text('Besar')),
+          ],
+          selected: {_ukuran},
+          onSelectionChanged: (s) {
+            setState(() => _ukuran = s.first);
+            g.tulis('ukuran', s.first);
+          },
+        ),
+        const SizedBox(height: 16),
+        DropdownButtonFormField<String>(
+          initialValue: _hari,
+          decoration: const InputDecoration(
+              labelText: 'Ingatkan foto terkirim setelah (hari)', border: OutlineInputBorder()),
+          items: const [
+            DropdownMenuItem(value: '3', child: Text('3 hari')),
+            DropdownMenuItem(value: '7', child: Text('7 hari')),
+            DropdownMenuItem(value: '14', child: Text('14 hari')),
+            DropdownMenuItem(value: '30', child: Text('30 hari')),
+          ],
+          onChanged: (v) {
+            if (v == null) return;
+            setState(() => _hari = v);
+            g.tulis('hari', v);
+          },
+        ),
+        const SizedBox(height: 24),
+        const Text('Peta Survei v0.1 (tahap 1: foto disimpan di HP, belum mengunggah).',
+            style: TextStyle(color: Colors.grey)),
+      ]),
+    );
+  }
+}
