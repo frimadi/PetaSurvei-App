@@ -10,8 +10,76 @@
 const ID_FOLDER = 'ISI_ID_FOLDER_DI_SINI';   // ID folder utama SurveiJalan di Drive
 const BATAS_FOTO_MB = 8;
 
-function doGet() {
+function doGet(e) {
+  const p = (e && e.parameter) || {};
+  if (p.aksi === 'daftar') {
+    try {
+      return jawab(daftarSemua(p.segarkan === '1'));
+    } catch (err) {
+      return jawab({ ok: false, pesan: String(err.message || err) });
+    }
+  }
   return jawab({ ok: true, pesan: 'Skrip aktif. Gunakan POST untuk mengunggah.' });
+}
+
+/**
+ * Untuk website penampil (opsi B): menggabungkan semua file sesi dan menambahkan
+ * fotoId (ID file foto di Drive) ke tiap titik. Hasil disimpan di cache 10 menit;
+ * cache dihapus setiap ada unggahan atau perubahan data. Tambahkan &segarkan=1 untuk memaksa baca ulang.
+ */
+function daftarSemua(segarkan) {
+  const cache = CacheService.getScriptCache();
+  if (!segarkan) {
+    const n = Number(cache.get('daftar_n') || 0);
+    if (n > 0) {
+      const bagian = [];
+      for (let i = 0; i < n; i++) {
+        const b = cache.get('daftar_' + i);
+        if (b === null) break;
+        bagian.push(b);
+      }
+      if (bagian.length === n) return JSON.parse(bagian.join(''));
+    }
+  }
+  const induk = DriveApp.getFolderById(ID_FOLDER);
+  const idFoto = {};
+  const dFoto = cariSubfolder(induk, 'foto');
+  if (dFoto) {
+    const it = dFoto.getFiles();
+    while (it.hasNext()) { const f = it.next(); idFoto[f.getName()] = f.getId(); }
+  }
+  const sesi = [];
+  const dSesi = cariSubfolder(induk, 'sesi');
+  if (dSesi) {
+    const it = dSesi.getFiles();
+    while (it.hasNext()) {
+      const f = it.next();
+      if (!/\.json$/i.test(f.getName())) continue;
+      try {
+        const s = JSON.parse(f.getBlob().getDataAsString());
+        (s.titik || []).forEach(function (t) { t.fotoId = idFoto[t.foto] || null; });
+        sesi.push(s);
+      } catch (x) {}
+    }
+  }
+  const hasil = { ok: true, dibuat: new Date().toISOString(), sesi: sesi };
+  try {
+    const teks = JSON.stringify(hasil), pecah = [];
+    for (let i = 0; i < teks.length; i += 50000) pecah.push(teks.substring(i, i + 50000));
+    const kv = { daftar_n: String(pecah.length) };
+    pecah.forEach(function (b, i) { kv['daftar_' + i] = b; });
+    cache.putAll(kv, 600);
+  } catch (x) {}   // terlalu besar untuk cache: tidak apa-apa
+  return hasil;
+}
+
+function hapusCache() {
+  try { CacheService.getScriptCache().remove('daftar_n'); } catch (x) {}
+}
+
+function cariSubfolder(induk, nama) {
+  const it = induk.getFoldersByName(nama);
+  return it.hasNext() ? it.next() : null;
 }
 
 function doPost(e) {
@@ -56,6 +124,7 @@ function doPost(e) {
       const isi = JSON.stringify(sesi, null, 2);
       if (berkas) berkas.setContent(isi); else folderSesi.createFile(namaSesi, isi, MimeType.PLAIN_TEXT);
     }
+    hapusCache();
     return jawab({ ok: true, id: t.id, duplikat: duplikat, sesi: namaSesi });
   } catch (err) {
     return jawab({ ok: false, pesan: String(err.message || err) });
@@ -89,6 +158,7 @@ function ubahTitik(data, petugas, kunci) {
   if (!x) return jawab({ ok: false, pesan: 'Titik tidak ditemukan di Drive.' });
   x.ruas = t.ruas; x.sta = t.sta; x.kondisi = t.kondisi; x.catatan = t.catatan; x.bearing = t.bearing;
   berkas.setContent(JSON.stringify(sesi, null, 2));
+  hapusCache();
   return jawab({ ok: true, id: t.id, ubah: true, sesi: namaSesi });
 }
 
