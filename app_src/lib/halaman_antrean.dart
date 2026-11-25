@@ -1,12 +1,17 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'daftar_ruas.dart';
 import 'gudang.dart';
 import 'pengunggah.dart';
+import 'pilih_ruas.dart';
+import 'sta.dart';
 
 class HalamanAntrean extends StatefulWidget {
   final Gudang gudang;
   final Pengunggah pengunggah;
-  const HalamanAntrean({super.key, required this.gudang, required this.pengunggah});
+  final DaftarRuas daftarRuas;
+  const HalamanAntrean({super.key, required this.gudang, required this.pengunggah, required this.daftarRuas});
 
   @override
   State<HalamanAntrean> createState() => _HalamanAntreanState();
@@ -123,7 +128,11 @@ class _HalamanAntreanState extends State<HalamanAntrean> {
                 context,
                 MaterialPageRoute(
                     builder: (_) =>
-                        HalamanDetail(gudang: widget.gudang, daftar: semua, awal: ix < 0 ? 0 : ix)));
+                        HalamanDetail(
+                        gudang: widget.gudang,
+                        daftarRuas: widget.daftarRuas,
+                        daftar: semua,
+                        awal: ix < 0 ? 0 : ix)));
           }
         },
         onLongPress: () => _alih(t.id),
@@ -168,20 +177,29 @@ class _HalamanAntreanState extends State<HalamanAntrean> {
 
 /// Kumpulan isian satu foto di layar detail (disimpan agar tidak hilang saat digeser).
 class _Isian {
-  final TextEditingController ruas, sta, catatan, arah;
+  final TextEditingController ruas, catatan, arah, km, meter;
   String kondisi;
+  String idRuas;
+  final String staLama; // STA tersimpan yang tidak berpola KM+MMM (ditampilkan sebagai catatan)
+  String kmAwal, meterAwal;
   _Isian(Titik t)
       : ruas = TextEditingController(text: t.ruas),
-        sta = TextEditingController(text: t.sta),
         catatan = TextEditingController(text: t.catatan),
         arah = TextEditingController(text: t.bearing.toString()),
-        kondisi = t.kondisi;
+        km = TextEditingController(text: pecahSta(t.sta)?.km ?? ''),
+        meter = TextEditingController(text: pecahSta(t.sta)?.meter ?? ''),
+        kondisi = t.kondisi,
+        idRuas = t.idRuas,
+        staLama = pecahSta(t.sta) == null ? t.sta : '',
+        kmAwal = pecahSta(t.sta)?.km ?? '',
+        meterAwal = pecahSta(t.sta)?.meter ?? '';
 
   void buang() {
     ruas.dispose();
-    sta.dispose();
     catatan.dispose();
     arah.dispose();
+    km.dispose();
+    meter.dispose();
   }
 }
 
@@ -190,9 +208,11 @@ class _Isian {
 /// ke Drive (hanya datanya, bukan fotonya).
 class HalamanDetail extends StatefulWidget {
   final Gudang gudang;
+  final DaftarRuas daftarRuas;
   final List<Titik> daftar;
   final int awal;
-  const HalamanDetail({super.key, required this.gudang, required this.daftar, required this.awal});
+  const HalamanDetail(
+      {super.key, required this.gudang, required this.daftarRuas, required this.daftar, required this.awal});
 
   @override
   State<HalamanDetail> createState() => _HalamanDetailState();
@@ -231,31 +251,46 @@ class _HalamanDetailState extends State<HalamanDetail> {
     final i = _isian[id];
     if (t == null || i == null) return true;
     if (!widget.gudang.daftar.contains(t)) return true;
+    void galat(String pesan) {
+      if (tampilPesan && mounted) _pesan('Perubahan tidak disimpan: $pesan');
+    }
+
     final ruas = i.ruas.text.trim();
-    final sta = i.sta.text.trim();
     final cat = i.catatan.text.trim();
     final a = int.tryParse(i.arah.text.trim());
+    final staBerubah = i.km.text.trim() != i.kmAwal || i.meter.text.trim() != i.meterAwal;
+    final sta = susunSta(i.km.text, i.meter.text);
+    if (staBerubah && sta.galat != null) {
+      galat(sta.galat!);
+      return false;
+    }
+    final staBaru = staBerubah ? sta.teks : t.sta;
+    final idBaru = ruas.isEmpty ? '' : i.idRuas;
     final sama = ruas == t.ruas &&
-        sta == t.sta &&
+        idBaru == t.idRuas &&
+        staBaru == t.sta &&
         cat == t.catatan &&
         i.kondisi == t.kondisi &&
         a != null &&
         a % 360 == t.bearing;
     if (sama) return true;
     if (a == null || a < 0 || a > 360) {
-      if (tampilPesan && mounted) _pesan('Perubahan tidak disimpan: arah harus 0-360.');
+      galat('arah harus 0-360.');
       return false;
     }
     if (ruas.isEmpty) {
-      if (tampilPesan && mounted) _pesan('Perubahan tidak disimpan: nama jalan tidak boleh kosong.');
+      galat('nama jalan tidak boleh kosong.');
       return false;
     }
     if (a % 360 != t.bearing) t.arahTerbaca = true;
     t.ruas = ruas;
-    t.sta = sta;
+    t.idRuas = idBaru;
+    t.sta = staBaru;
     t.catatan = cat;
     t.kondisi = i.kondisi;
     t.bearing = a % 360;
+    i.kmAwal = i.km.text.trim();
+    i.meterAwal = i.meter.text.trim();
     // Foto yang sudah ada di Drive: tandai agar perubahannya ikut dikirim.
     if (t.status == 'terkirim' || t.status == 'mengirim') {
       t.ubahTertunda = true;
@@ -364,9 +399,12 @@ class _HalamanDetailState extends State<HalamanDetail> {
                   style: TextStyle(color: Colors.orange)),
             ),
           const SizedBox(height: 12),
-          TextField(
-              controller: i.ruas,
-              decoration: const InputDecoration(labelText: 'Nama jalan', border: OutlineInputBorder())),
+          PilihRuas(
+            daftar: widget.daftarRuas,
+            controller: i.ruas,
+            idRuas: i.idRuas,
+            onId: (v) => setState(() => i.idRuas = v),
+          ),
           const SizedBox(height: 10),
           Wrap(spacing: 8, children: [
             for (final k in daftarKondisi)
@@ -377,18 +415,37 @@ class _HalamanDetailState extends State<HalamanDetail> {
               ),
           ]),
           const SizedBox(height: 10),
-          Row(children: [
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Expanded(
+                flex: 2,
                 child: TextField(
                     controller: i.arah,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Arah (0-360°)', border: OutlineInputBorder()))),
+                    decoration: const InputDecoration(labelText: 'Arah (°)', border: OutlineInputBorder()))),
             const SizedBox(width: 8),
             Expanded(
                 child: TextField(
-                    controller: i.sta,
-                    decoration: const InputDecoration(labelText: 'STA', border: OutlineInputBorder()))),
+                    controller: i.km,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: const InputDecoration(labelText: 'STA KM', border: OutlineInputBorder()))),
+            const Padding(
+                padding: EdgeInsets.fromLTRB(6, 14, 6, 0), child: Text('+', style: TextStyle(fontSize: 22))),
+            Expanded(
+                child: TextField(
+                    controller: i.meter,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                        labelText: 'Meter', border: const OutlineInputBorder(), errorText: galatMeter(i.meter.text)))),
           ]),
+          if (i.staLama.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('STA lama (teks bebas): ${i.staLama}. Isi KM dan Meter untuk menggantinya.',
+                  style: const TextStyle(fontSize: 12, color: Colors.black54)),
+            ),
           const SizedBox(height: 10),
           TextField(
               controller: i.catatan,

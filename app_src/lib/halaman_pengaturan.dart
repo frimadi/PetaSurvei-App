@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'daftar_ruas.dart';
 import 'gudang.dart';
 
 class HalamanPengaturan extends StatefulWidget {
   final Gudang gudang;
-  const HalamanPengaturan({super.key, required this.gudang});
+  final DaftarRuas daftarRuas;
+  const HalamanPengaturan({super.key, required this.gudang, required this.daftarRuas});
 
   @override
   State<HalamanPengaturan> createState() => _HalamanPengaturanState();
@@ -20,6 +22,7 @@ class _HalamanPengaturanState extends State<HalamanPengaturan> {
   late String _hari = g.baca('hari', '7');
   String? _hasil;
   bool _menguji = false;
+  String? _hasilRuas;
 
   @override
   void dispose() {
@@ -51,6 +54,12 @@ class _HalamanPengaturanState extends State<HalamanPengaturan> {
     }
   }
 
+  Future<void> _perbaruiRuas() async {
+    setState(() => _hasilRuas = 'Memperbarui…');
+    final p = await widget.daftarRuas.perbarui(paksa: true);
+    if (mounted) setState(() => _hasilRuas = p);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -76,6 +85,27 @@ class _HalamanPengaturanState extends State<HalamanPengaturan> {
           child: FilledButton.tonal(onPressed: _menguji ? null : _uji, child: const Text('Uji koneksi')),
         ),
         if (_hasil != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(_hasil!)),
+        const Divider(height: 32),
+        const Text('Daftar ruas SK Jalan', style: TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 4),
+        AnimatedBuilder(
+          animation: widget.daftarRuas,
+          builder: (context, _) {
+            final d = widget.daftarRuas;
+            final info = d.kosong
+                ? 'Belum diunduh.'
+                : '${d.semua.length} ruas · diperbarui ${d.diperbarui.length >= 10 ? formatWaktu(d.diperbarui) : '-'}';
+            return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(info, style: const TextStyle(color: Colors.black54)),
+              const SizedBox(height: 8),
+              FilledButton.tonal(
+                onPressed: d.sibuk ? null : _perbaruiRuas,
+                child: Text(d.sibuk ? 'Memperbarui…' : 'Perbarui daftar ruas'),
+              ),
+            ]);
+          },
+        ),
+        if (_hasilRuas != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(_hasilRuas!)),
         const Divider(height: 32),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
@@ -120,7 +150,7 @@ class _HalamanPengaturanState extends State<HalamanPengaturan> {
           },
         ),
         const SizedBox(height: 24),
-        const Text('Peta Survei v0.2 (tahap 2: foto dikirim ke Drive lewat skrip).',
+        const Text('Peta Survei v0.5 (nama jalan dari SK Jalan, STA dua kolom, foto dikirim ke Drive lewat skrip).',
             style: TextStyle(color: Colors.grey)),
       ]),
     );

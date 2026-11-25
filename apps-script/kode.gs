@@ -19,7 +19,85 @@ function doGet(e) {
       return jawab({ ok: false, pesan: String(err.message || err) });
     }
   }
+  if (p.aksi === 'ruas') {
+    try {
+      return jawab(daftarRuas(String(p.versi || '')));
+    } catch (err) {
+      return jawab({ ok: false, pesan: String(err.message || err) });
+    }
+  }
   return jawab({ ok: true, pesan: 'Skrip aktif. Gunakan POST untuk mengunggah.' });
+}
+
+function teks(v) { return v === null || v === undefined ? '' : String(v).trim(); }
+
+/**
+ * Daftar ruas SK Jalan untuk pilihan nama jalan di aplikasi.
+ * Membaca berkas GeoJSON di folder "referensi" (di dalam folder utama). Berkas yang namanya
+ * memuat kata "desa" dianggap SK Jalan Desa; selain itu SK Jalan Kabupaten.
+ * Hanya atribut yang perlu diambil (tanpa geometri), sehingga hasilnya kecil.
+ * Untuk memperbarui daftar: ganti berkas GeoJSON di Drive, lalu tekan "Perbarui daftar ruas" di aplikasi.
+ * Bila versi dari aplikasi sama dengan versi berkas saat ini, skrip hanya menjawab {sama:true}.
+ */
+function daftarRuas(versiKlien) {
+  const induk = DriveApp.getFolderById(ID_FOLDER);
+  const dRef = cariSubfolder(induk, 'referensi');
+  if (!dRef) return { ok: false, pesan: 'Folder "referensi" belum ada di folder utama Drive.' };
+  const berkas = [];
+  const it = dRef.getFiles();
+  while (it.hasNext()) {
+    const f = it.next();
+    if (/\.(geojson|json)$/i.test(f.getName())) berkas.push(f);
+  }
+  if (!berkas.length) return { ok: false, pesan: 'Folder "referensi" kosong. Unggah berkas GeoJSON SK Jalan.' };
+  berkas.sort(function (a, b) { return a.getName() < b.getName() ? -1 : 1; });
+  const mentah = berkas.map(function (f) { return f.getName() + ':' + f.getSize() + ':' + f.getLastUpdated().getTime(); }).join('|');
+  const versi = Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, mentah)).substring(0, 12);
+  if (versiKlien && versiKlien === versi) return { ok: true, versi: versi, sama: true };
+
+  const cache = CacheService.getScriptCache();
+  const n = Number(cache.get('ruas_n_' + versi) || 0);
+  if (n > 0) {
+    const bagian = [];
+    for (let i = 0; i < n; i++) {
+      const b = cache.get('ruas_' + versi + '_' + i);
+      if (b === null) break;
+      bagian.push(b);
+    }
+    if (bagian.length === n) return JSON.parse(bagian.join(''));
+  }
+
+  const daftar = [], sudah = {}, peringatan = [];
+  berkas.forEach(function (f) {
+    const nama = f.getName();
+    const jenis = /desa/i.test(nama) ? 'D' : 'K';
+    let gj;
+    try { gj = JSON.parse(f.getBlob().getDataAsString()); }
+    catch (e) { peringatan.push(nama + ': bukan JSON yang valid'); return; }
+    let dipakai = 0;
+    (gj.features || []).forEach(function (ft) {
+      const p = ft.properties || {};
+      const id = teks(p.ID_GIS);
+      const nm = teks(p.NAMA_JL) || teks(p.Nm_Ruas) || teks(p.NAMA_RUAS_);
+      if (!id || !nm || sudah[id]) return;
+      sudah[id] = true;
+      const kec = teks(p.kecamatan) || teks(p.KEC2);
+      const desa = teks(p.Desa_Kel) || teks(p.DESA_KELUR) || teks(p.DesKel);
+      daftar.push([id, nm, jenis, kec, desa]);
+      dipakai++;
+    });
+    if (!dipakai) peringatan.push(nama + ': tidak ada fitur dengan ID_GIS dan NAMA_JL');
+  });
+  const hasil = { ok: true, versi: versi, dibuat: new Date().toISOString(), r: daftar, peringatan: peringatan };
+  try {
+    const t = JSON.stringify(hasil), pecah = [];
+    for (let i = 0; i < t.length; i += 50000) pecah.push(t.substring(i, i + 50000));
+    const kv = {};
+    kv['ruas_n_' + versi] = String(pecah.length);
+    pecah.forEach(function (b, i) { kv['ruas_' + versi + '_' + i] = b; });
+    cache.putAll(kv, 21600);
+  } catch (e) {}   // terlalu besar untuk cache: tidak apa-apa
+  return hasil;
 }
 
 /**
@@ -120,7 +198,7 @@ function doPost(e) {
 
     let duplikat = sesi.titik.some(function (x) { return x.id === t.id; });
     if (!duplikat) {
-      sesi.titik.push({ id: t.id, foto: namaFoto, lat: t.lat, lon: t.lon, bearing: t.bearing, ruas: t.ruas, sta: t.sta, kondisi: t.kondisi, akurasi: t.akurasi, catatan: t.catatan, waktu: t.waktu });
+      sesi.titik.push({ id: t.id, foto: namaFoto, lat: t.lat, lon: t.lon, bearing: t.bearing, ruas: t.ruas, idRuas: t.idRuas, sta: t.sta, kondisi: t.kondisi, akurasi: t.akurasi, catatan: t.catatan, waktu: t.waktu });
       const isi = JSON.stringify(sesi, null, 2);
       if (berkas) berkas.setContent(isi); else folderSesi.createFile(namaSesi, isi, MimeType.PLAIN_TEXT);
     }
@@ -156,7 +234,7 @@ function ubahTitik(data, petugas, kunci) {
     if (sesi.titik[i].id === t.id) { x = sesi.titik[i]; break; }
   }
   if (!x) return jawab({ ok: false, pesan: 'Titik tidak ditemukan di Drive.' });
-  x.ruas = t.ruas; x.sta = t.sta; x.kondisi = t.kondisi; x.catatan = t.catatan; x.bearing = t.bearing;
+  x.ruas = t.ruas; x.idRuas = t.idRuas; x.sta = t.sta; x.kondisi = t.kondisi; x.catatan = t.catatan; x.bearing = t.bearing;
   berkas.setContent(JSON.stringify(sesi, null, 2));
   hapusCache();
   return jawab({ ok: true, id: t.id, ubah: true, sesi: namaSesi });
@@ -182,7 +260,7 @@ function periksaTitik(t) {
   if (!(bearing >= 0 && bearing <= 360)) throw new Error('Arah harus 0-360 derajat.');
   return {
     id: t.id, waktu: t.waktu, lat: lat, lon: lon, bearing: Math.round(bearing),
-    ruas: String(t.ruas || '').substring(0, 120), catatan: String(t.catatan || '').substring(0, 300),
+    ruas: String(t.ruas || '').substring(0, 120), idRuas: String(t.idRuas || '').substring(0, 30), catatan: String(t.catatan || '').substring(0, 300),
     sta: String(t.sta || '').substring(0, 50), kondisi: String(t.kondisi || '').substring(0, 40),
     akurasi: (t.akurasi != null && isFinite(Number(t.akurasi))) ? Math.round(Number(t.akurasi) * 10) / 10 : null
   };

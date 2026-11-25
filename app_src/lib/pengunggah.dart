@@ -61,7 +61,7 @@ class Pengunggah extends ChangeNotifier {
     return null;
   }
 
-  String _tandaUbah(Titik t) => '${t.ruas}|${t.sta}|${t.kondisi}|${t.catatan}|${t.bearing}';
+  String _tandaUbah(Titik t) => '${t.ruas}|${t.idRuas}|${t.sta}|${t.kondisi}|${t.catatan}|${t.bearing}';
 
   /// Mengirim semua foto berstatus menunggu/gagal, lalu perubahan data foto yang sudah terkirim.
   /// Berhenti pada kegagalan pertama (mis. tanpa sinyal) agar tidak memboroskan baterai.
@@ -123,6 +123,7 @@ class Pengunggah extends ChangeNotifier {
           'akurasi': t.akurasi,
           'bearing': t.bearing,
           'ruas': t.ruas,
+          'idRuas': t.idRuas,
           'sta': t.sta,
           'kondisi': t.kondisi,
           'catatan': t.catatan,
@@ -167,6 +168,7 @@ class Pengunggah extends ChangeNotifier {
           'akurasi': t.akurasi,
           'bearing': t.bearing,
           'ruas': t.ruas,
+          'idRuas': t.idRuas,
           'sta': t.sta,
           'kondisi': t.kondisi,
           'catatan': t.catatan,

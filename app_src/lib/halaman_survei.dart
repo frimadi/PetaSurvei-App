@@ -1,15 +1,21 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
+import 'daftar_ruas.dart';
 import 'gudang.dart';
 import 'halaman_antrean.dart';
 import 'kompas.dart';
+import 'pilih_ruas.dart';
+import 'sta.dart';
 
 class HalamanSurvei extends StatefulWidget {
   final Gudang gudang;
-  const HalamanSurvei({super.key, required this.gudang});
+  final DaftarRuas daftarRuas;
+  const HalamanSurvei({super.key, required this.gudang, required this.daftarRuas});
 
   @override
   State<HalamanSurvei> createState() => _HalamanSurveiState();
@@ -24,7 +30,9 @@ class _HalamanSurveiState extends State<HalamanSurvei> with WidgetsBindingObserv
   final _kompas = Kompas();
   Timer? _timer;
   final _ruas = TextEditingController();
-  final _sta = TextEditingController();
+  final _km = TextEditingController();
+  final _meter = TextEditingController();
+  String _idRuas = '';
   final _catatan = TextEditingController();
   String _kondisi = daftarKondisi.first;
   bool _sibuk = false;
@@ -34,6 +42,7 @@ class _HalamanSurveiState extends State<HalamanSurvei> with WidgetsBindingObserv
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _ruas.text = widget.gudang.baca('ruas');
+    _idRuas = _ruas.text.isEmpty ? '' : widget.gudang.baca('idRuas');
     final k = widget.gudang.baca('kondisi');
     if (daftarKondisi.contains(k)) _kondisi = k;
     _kompas.mulai();
@@ -52,7 +61,8 @@ class _HalamanSurveiState extends State<HalamanSurvei> with WidgetsBindingObserv
     _kompas.henti();
     _kam?.dispose();
     _ruas.dispose();
-    _sta.dispose();
+    _km.dispose();
+    _meter.dispose();
     _catatan.dispose();
     super.dispose();
   }
@@ -147,6 +157,12 @@ class _HalamanSurveiState extends State<HalamanSurvei> with WidgetsBindingObserv
       _bukaIsian();
       return;
     }
+    final sta = susunSta(_km.text, _meter.text);
+    if (sta.galat != null) {
+      _pesan('STA: ${sta.galat}');
+      _bukaIsian();
+      return;
+    }
     if (_pos == null) {
       _pesan('Lokasi belum didapat. Tunggu sebentar.');
       return;
@@ -184,12 +200,14 @@ class _HalamanSurveiState extends State<HalamanSurvei> with WidgetsBindingObserv
         bearing: ((arah ?? 0).round()) % 360,
         arahTerbaca: arah != null,
         ruas: _ruas.text.trim(),
-        sta: _sta.text.trim(),
+        idRuas: _idRuas,
+        sta: sta.teks,
         kondisi: _kondisi,
         catatan: _catatan.text.trim(),
       );
       await widget.gudang.tambah(t);
       await widget.gudang.tulis('ruas', t.ruas);
+      await widget.gudang.tulis('idRuas', t.idRuas);
       await widget.gudang.tulis('kondisi', t.kondisi);
       if (mounted) {
         _catatan.clear();
@@ -241,65 +259,88 @@ class _HalamanSurveiState extends State<HalamanSurvei> with WidgetsBindingObserv
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
-      builder: (c) => Padding(
-        padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + MediaQuery.of(c).viewInsets.bottom),
-        child: StatefulBuilder(
-          builder: (c, setS) => SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: _ruas,
-                  autofocus: _ruas.text.trim().isEmpty,
-                  textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(labelText: 'Nama jalan', border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    for (final k in daftarKondisi)
-                      ChoiceChip(
-                        label: Text(k),
-                        selected: _kondisi == k,
-                        onSelected: (_) {
-                          setS(() {});
-                          setState(() => _kondisi = k);
-                        },
+      builder: (c) {
+        final mq = MediaQuery.of(c);
+        // Ruang di bawah: papan ketik bila terbuka, bila tidak maka bilah navigasi Android.
+        final bawah = math.max(mq.viewInsets.bottom, mq.viewPadding.bottom);
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + bawah),
+          child: StatefulBuilder(
+            builder: (c, setS) => SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  PilihRuas(
+                    daftar: widget.daftarRuas,
+                    controller: _ruas,
+                    idRuas: _idRuas,
+                    autofocus: _ruas.text.trim().isEmpty,
+                    onId: (v) {
+                      setS(() {});
+                      setState(() => _idRuas = v);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final k in daftarKondisi)
+                        ChoiceChip(
+                          label: Text(k),
+                          selected: _kondisi == k,
+                          onSelected: (_) {
+                            setS(() {});
+                            setState(() => _kondisi = k);
+                          },
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _km,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        decoration: const InputDecoration(
+                            labelText: 'STA KM (opsional)', border: OutlineInputBorder()),
                       ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _sta,
-                      decoration: const InputDecoration(
-                          labelText: 'STA (opsional)', hintText: '1+250', border: OutlineInputBorder()),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    flex: 2,
-                    child: TextField(
-                      controller: _catatan,
-                      decoration:
-                          const InputDecoration(labelText: 'Catatan (opsional)', border: OutlineInputBorder()),
+                    const Padding(
+                        padding: EdgeInsets.fromLTRB(8, 14, 8, 0), child: Text('+', style: TextStyle(fontSize: 22))),
+                    Expanded(
+                      child: TextField(
+                        controller: _meter,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        onChanged: (_) => setS(() {}),
+                        decoration: InputDecoration(
+                            labelText: 'Meter',
+                            hintText: '0-999',
+                            border: const OutlineInputBorder(),
+                            errorText: galatMeter(_meter.text)),
+                      ),
                     ),
+                  ]),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _catatan,
+                    decoration:
+                        const InputDecoration(labelText: 'Catatan (opsional)', border: OutlineInputBorder()),
                   ),
-                ]),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: FilledButton(onPressed: () => Navigator.pop(c), child: const Text('Selesai')),
-                ),
-              ],
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: FilledButton(onPressed: () => Navigator.pop(c), child: const Text('Selesai')),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
     if (mounted) setState(() {});
   }
@@ -310,7 +351,9 @@ class _HalamanSurveiState extends State<HalamanSurvei> with WidgetsBindingObserv
     if (semua.isEmpty) return;
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => HalamanDetail(gudang: widget.gudang, daftar: semua, awal: 0)),
+      MaterialPageRoute(
+          builder: (_) =>
+              HalamanDetail(gudang: widget.gudang, daftarRuas: widget.daftarRuas, daftar: semua, awal: 0)),
     );
     if (mounted) setState(() {});
   }
@@ -320,7 +363,7 @@ class _HalamanSurveiState extends State<HalamanSurvei> with WidgetsBindingObserv
     final ringkas = [
       kosong ? 'Isi nama jalan' : _ruas.text.trim(),
       _kondisi,
-      if (_sta.text.trim().isNotEmpty) 'STA ${_sta.text.trim()}',
+      if (susunSta(_km.text, _meter.text).teks.isNotEmpty) 'STA ${susunSta(_km.text, _meter.text).teks}',
     ].join(' · ');
     return Container(
       color: Theme.of(context).colorScheme.surface,
@@ -336,7 +379,8 @@ class _HalamanSurveiState extends State<HalamanSurvei> with WidgetsBindingObserv
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(children: [
-              Icon(Icons.edit_outlined, size: 20, color: kosong ? Colors.red : null),
+              Icon(_idRuas.isNotEmpty ? Icons.check_circle : Icons.edit_outlined,
+                  size: 20, color: kosong ? Colors.red : (_idRuas.isNotEmpty ? Colors.green : null)),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(ringkas,

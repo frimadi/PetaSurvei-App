@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'gudang.dart';
 import 'halaman_antrean.dart';
 import 'halaman_pengaturan.dart';
+import 'daftar_ruas.dart';
 import 'halaman_survei.dart';
 import 'pengunggah.dart';
 
@@ -12,27 +13,31 @@ Future<void> main() async {
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   final gudang = Gudang();
   await gudang.muat();
-  runApp(PetaSurveiApp(gudang: gudang, pengunggah: Pengunggah(gudang)));
+  final daftarRuas = DaftarRuas(gudang);
+  await daftarRuas.muat();
+  runApp(PetaSurveiApp(gudang: gudang, pengunggah: Pengunggah(gudang), daftarRuas: daftarRuas));
 }
 
 class PetaSurveiApp extends StatelessWidget {
   final Gudang gudang;
   final Pengunggah pengunggah;
-  const PetaSurveiApp({super.key, required this.gudang, required this.pengunggah});
+  final DaftarRuas daftarRuas;
+  const PetaSurveiApp({super.key, required this.gudang, required this.pengunggah, required this.daftarRuas});
 
   @override
   Widget build(BuildContext context) => MaterialApp(
         title: 'Peta Survei',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(useMaterial3: true, colorSchemeSeed: const Color(0xFF2F6F6A)),
-        home: Beranda(gudang: gudang, pengunggah: pengunggah),
+        home: Beranda(gudang: gudang, pengunggah: pengunggah, daftarRuas: daftarRuas),
       );
 }
 
 class Beranda extends StatefulWidget {
   final Gudang gudang;
   final Pengunggah pengunggah;
-  const Beranda({super.key, required this.gudang, required this.pengunggah});
+  final DaftarRuas daftarRuas;
+  const Beranda({super.key, required this.gudang, required this.pengunggah, required this.daftarRuas});
 
   @override
   State<Beranda> createState() => _BerandaState();
@@ -50,6 +55,7 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
     // Coba ulang berkala selama aplikasi terbuka (foto gagal/belum terkirim).
     _timer = Timer.periodic(const Duration(minutes: 2), (_) => widget.pengunggah.kirimSemua());
     widget.pengunggah.kirimSemua();
+    widget.daftarRuas.perbaruiOtomatis();
   }
 
   // Foto baru (status menunggu) langsung dikirim.
@@ -61,7 +67,10 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) widget.pengunggah.kirimSemua();
+    if (state == AppLifecycleState.resumed) {
+      widget.pengunggah.kirimSemua();
+      widget.daftarRuas.perbaruiOtomatis();
+    }
   }
 
   @override
@@ -76,9 +85,9 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     // Halaman dibangun ulang saat berpindah tab, sehingga kamera dan GPS mati saat tidak dipakai.
     final halaman = [
-      HalamanSurvei(gudang: widget.gudang),
-      HalamanAntrean(gudang: widget.gudang, pengunggah: widget.pengunggah),
-      HalamanPengaturan(gudang: widget.gudang),
+      HalamanSurvei(gudang: widget.gudang, daftarRuas: widget.daftarRuas),
+      HalamanAntrean(gudang: widget.gudang, pengunggah: widget.pengunggah, daftarRuas: widget.daftarRuas),
+      HalamanPengaturan(gudang: widget.gudang, daftarRuas: widget.daftarRuas),
     ][_tab];
     return Scaffold(
       body: halaman,

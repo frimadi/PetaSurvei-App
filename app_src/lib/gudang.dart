@@ -40,6 +40,7 @@ class Titik {
   int bearing;
   bool arahTerbaca;
   String ruas;
+  String idRuas; // ID_GIS ruas SK Jalan; kosong bila nama diketik manual
   String sta;
   String kondisi;
   String catatan;
@@ -57,6 +58,7 @@ class Titik {
     required this.bearing,
     this.arahTerbaca = true,
     required this.ruas,
+    this.idRuas = '',
     this.sta = '',
     required this.kondisi,
     this.catatan = '',
@@ -75,6 +77,7 @@ class Titik {
         'bearing': bearing,
         'arahTerbaca': arahTerbaca,
         'ruas': ruas,
+        'idRuas': idRuas,
         'sta': sta,
         'kondisi': kondisi,
         'catatan': catatan,
@@ -93,6 +96,7 @@ class Titik {
         bearing: (j['bearing'] as num).toInt(),
         arahTerbaca: (j['arahTerbaca'] as bool?) ?? true,
         ruas: (j['ruas'] as String?) ?? '',
+        idRuas: (j['idRuas'] as String?) ?? '',
         sta: (j['sta'] as String?) ?? '',
         kondisi: (j['kondisi'] as String?) ?? daftarKondisi.first,
         catatan: (j['catatan'] as String?) ?? '',
