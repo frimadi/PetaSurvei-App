@@ -177,7 +177,7 @@ class _HalamanAntreanState extends State<HalamanAntrean> {
 
 /// Kumpulan isian satu foto di layar detail (disimpan agar tidak hilang saat digeser).
 class _Isian {
-  final TextEditingController ruas, catatan, arah, km, meter;
+  final TextEditingController ruas, catatan, arah, km, meter, petugas;
   String kondisi;
   String idRuas;
   final String staLama; // STA tersimpan yang tidak berpola KM+MMM (ditampilkan sebagai catatan)
@@ -185,6 +185,7 @@ class _Isian {
   _Isian(Titik t)
       : ruas = TextEditingController(text: t.ruas),
         catatan = TextEditingController(text: t.catatan),
+        petugas = TextEditingController(text: t.petugas),
         arah = TextEditingController(text: t.bearing.toString()),
         km = TextEditingController(text: pecahSta(t.sta)?.km ?? ''),
         meter = TextEditingController(text: pecahSta(t.sta)?.meter ?? ''),
@@ -197,6 +198,7 @@ class _Isian {
   void buang() {
     ruas.dispose();
     catatan.dispose();
+    petugas.dispose();
     arah.dispose();
     km.dispose();
     meter.dispose();
@@ -257,6 +259,7 @@ class _HalamanDetailState extends State<HalamanDetail> {
 
     final ruas = i.ruas.text.trim();
     final cat = i.catatan.text.trim();
+    final pet = i.petugas.text.trim();
     final a = int.tryParse(i.arah.text.trim());
     final staBerubah = i.km.text.trim() != i.kmAwal || i.meter.text.trim() != i.meterAwal;
     final sta = susunSta(i.km.text, i.meter.text);
@@ -270,6 +273,7 @@ class _HalamanDetailState extends State<HalamanDetail> {
         idBaru == t.idRuas &&
         staBaru == t.sta &&
         cat == t.catatan &&
+        pet == t.petugas &&
         i.kondisi == t.kondisi &&
         a != null &&
         a % 360 == t.bearing;
@@ -287,6 +291,7 @@ class _HalamanDetailState extends State<HalamanDetail> {
     t.idRuas = idBaru;
     t.sta = staBaru;
     t.catatan = cat;
+    t.petugas = pet;
     t.kondisi = i.kondisi;
     t.bearing = a % 360;
     i.kmAwal = i.km.text.trim();
@@ -450,6 +455,11 @@ class _HalamanDetailState extends State<HalamanDetail> {
           TextField(
               controller: i.catatan,
               decoration: const InputDecoration(labelText: 'Catatan', border: OutlineInputBorder())),
+          const SizedBox(height: 10),
+          TextField(
+              controller: i.petugas,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(labelText: 'Nama petugas (opsional)', border: OutlineInputBorder())),
           const SizedBox(height: 16),
           Row(children: [
             Expanded(child: FilledButton(onPressed: _simpanTombol, child: const Text('Simpan'))),

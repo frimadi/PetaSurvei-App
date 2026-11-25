@@ -44,6 +44,7 @@ class Titik {
   String sta;
   String kondisi;
   String catatan;
+  String petugas; // nama petugas (opsional, diketik petugas sendiri)
   String status; // menunggu | mengirim | terkirim | gagal
   String galat;
   bool ubahTertunda; // data diubah setelah terkirim, perubahan belum sampai ke Drive
@@ -62,6 +63,7 @@ class Titik {
     this.sta = '',
     required this.kondisi,
     this.catatan = '',
+    this.petugas = '',
     this.status = 'menunggu',
     this.galat = '',
     this.ubahTertunda = false,
@@ -81,6 +83,7 @@ class Titik {
         'sta': sta,
         'kondisi': kondisi,
         'catatan': catatan,
+        'petugas': petugas,
         'status': status,
         'galat': galat,
         'ubahTertunda': ubahTertunda,
@@ -100,6 +103,7 @@ class Titik {
         sta: (j['sta'] as String?) ?? '',
         kondisi: (j['kondisi'] as String?) ?? daftarKondisi.first,
         catatan: (j['catatan'] as String?) ?? '',
+        petugas: (j['petugas'] as String?) ?? '',
         status: (j['status'] as String?) ?? 'menunggu',
         galat: (j['galat'] as String?) ?? '',
         ubahTertunda: (j['ubahTertunda'] as bool?) ?? false,

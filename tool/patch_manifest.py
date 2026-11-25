@@ -8,6 +8,6 @@ izin = '''    <uses-permission android:name="android.permission.INTERNET"/>
 '''
 if 'android.permission.CAMERA' not in s:
     s = s.replace('<application', izin + '    <application', 1)
-s = re.sub(r'android:label="[^"]*"', 'android:label="Peta Survei"', s, count=1)
+s = re.sub(r'android:label="[^"]*"', 'android:label="Survei Jalan"', s, count=1)
 open(p, 'w', encoding='utf-8').write(s)
 print('Manifest diperbarui')

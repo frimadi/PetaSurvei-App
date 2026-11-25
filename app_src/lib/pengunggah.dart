@@ -61,7 +61,7 @@ class Pengunggah extends ChangeNotifier {
     return null;
   }
 
-  String _tandaUbah(Titik t) => '${t.ruas}|${t.idRuas}|${t.sta}|${t.kondisi}|${t.catatan}|${t.bearing}';
+  String _tandaUbah(Titik t) => '${t.ruas}|${t.idRuas}|${t.sta}|${t.kondisi}|${t.catatan}|${t.bearing}|${t.petugas}';
 
   /// Mengirim semua foto berstatus menunggu/gagal, lalu perubahan data foto yang sudah terkirim.
   /// Berhenti pada kegagalan pertama (mis. tanpa sinyal) agar tidak memboroskan baterai.
@@ -127,6 +127,7 @@ class Pengunggah extends ChangeNotifier {
           'sta': t.sta,
           'kondisi': t.kondisi,
           'catatan': t.catatan,
+          'petugas': t.petugas,
         },
         'foto': {'mime': 'image/jpeg', 'dataBase64': base64Encode(kecil)},
       });
@@ -172,6 +173,7 @@ class Pengunggah extends ChangeNotifier {
           'sta': t.sta,
           'kondisi': t.kondisi,
           'catatan': t.catatan,
+          'petugas': t.petugas,
         },
       });
       final j = await _kirim(url, badan);

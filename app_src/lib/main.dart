@@ -15,18 +15,18 @@ Future<void> main() async {
   await gudang.muat();
   final daftarRuas = DaftarRuas(gudang);
   await daftarRuas.muat();
-  runApp(PetaSurveiApp(gudang: gudang, pengunggah: Pengunggah(gudang), daftarRuas: daftarRuas));
+  runApp(SurveiJalanApp(gudang: gudang, pengunggah: Pengunggah(gudang), daftarRuas: daftarRuas));
 }
 
-class PetaSurveiApp extends StatelessWidget {
+class SurveiJalanApp extends StatelessWidget {
   final Gudang gudang;
   final Pengunggah pengunggah;
   final DaftarRuas daftarRuas;
-  const PetaSurveiApp({super.key, required this.gudang, required this.pengunggah, required this.daftarRuas});
+  const SurveiJalanApp({super.key, required this.gudang, required this.pengunggah, required this.daftarRuas});
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: 'Peta Survei',
+        title: 'Survei Jalan',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(useMaterial3: true, colorSchemeSeed: const Color(0xFF2F6F6A)),
         home: Beranda(gudang: gudang, pengunggah: pengunggah, daftarRuas: daftarRuas),

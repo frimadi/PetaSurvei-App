@@ -1,7 +1,7 @@
 name: peta_survei_app
-description: Aplikasi survei foto bergeotag untuk Peta Survei.
+description: Survei Jalan - aplikasi survei foto bergeotag untuk Bina Marga.
 publish_to: none
-version: 0.5.0+5
+version: 0.6.0+6
 
 environment:
   sdk: ">=3.3.0 <4.0.0"

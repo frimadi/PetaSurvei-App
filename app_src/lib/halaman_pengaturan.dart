@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'daftar_ruas.dart';
 import 'gudang.dart';
+import 'halaman_tentang.dart';
+import 'info_app.dart';
 
 class HalamanPengaturan extends StatefulWidget {
   final Gudang gudang;
@@ -65,6 +67,17 @@ class _HalamanPengaturanState extends State<HalamanPengaturan> {
     return Scaffold(
       appBar: AppBar(title: const Text('Pengaturan')),
       body: ListView(padding: const EdgeInsets.all(16), children: [
+        Card(
+          margin: EdgeInsets.zero,
+          child: ListTile(
+            leading: const Icon(Icons.menu_book_outlined),
+            title: const Text('Tentang aplikasi dan panduan'),
+            subtitle: const Text('Fungsi, cara pakai, versi, developer'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const HalamanTentang())),
+          ),
+        ),
+        const SizedBox(height: 16),
         TextField(
           controller: _url,
           keyboardType: TextInputType.url,
@@ -150,8 +163,8 @@ class _HalamanPengaturanState extends State<HalamanPengaturan> {
           },
         ),
         const SizedBox(height: 24),
-        const Text('Peta Survei v0.5 (nama jalan dari SK Jalan, STA dua kolom, foto dikirim ke Drive lewat skrip).',
-            style: TextStyle(color: Colors.grey)),
+        Text('$namaAplikasi v$versiAplikasi',
+            style: const TextStyle(color: Colors.grey)),
       ]),
     );
   }

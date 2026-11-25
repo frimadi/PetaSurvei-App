@@ -34,6 +34,7 @@ class _HalamanSurveiState extends State<HalamanSurvei> with WidgetsBindingObserv
   final _meter = TextEditingController();
   String _idRuas = '';
   final _catatan = TextEditingController();
+  final _petugas = TextEditingController();
   String _kondisi = daftarKondisi.first;
   bool _sibuk = false;
 
@@ -43,6 +44,7 @@ class _HalamanSurveiState extends State<HalamanSurvei> with WidgetsBindingObserv
     WidgetsBinding.instance.addObserver(this);
     _ruas.text = widget.gudang.baca('ruas');
     _idRuas = _ruas.text.isEmpty ? '' : widget.gudang.baca('idRuas');
+    _petugas.text = widget.gudang.baca('petugas');
     final k = widget.gudang.baca('kondisi');
     if (daftarKondisi.contains(k)) _kondisi = k;
     _kompas.mulai();
@@ -64,6 +66,7 @@ class _HalamanSurveiState extends State<HalamanSurvei> with WidgetsBindingObserv
     _km.dispose();
     _meter.dispose();
     _catatan.dispose();
+    _petugas.dispose();
     super.dispose();
   }
 
@@ -204,11 +207,13 @@ class _HalamanSurveiState extends State<HalamanSurvei> with WidgetsBindingObserv
         sta: sta.teks,
         kondisi: _kondisi,
         catatan: _catatan.text.trim(),
+        petugas: _petugas.text.trim(),
       );
       await widget.gudang.tambah(t);
       await widget.gudang.tulis('ruas', t.ruas);
       await widget.gudang.tulis('idRuas', t.idRuas);
       await widget.gudang.tulis('kondisi', t.kondisi);
+      await widget.gudang.tulis('petugas', t.petugas);
       if (mounted) {
         _catatan.clear();
         _pesan('Foto tersimpan di HP.');
@@ -328,6 +333,15 @@ class _HalamanSurveiState extends State<HalamanSurvei> with WidgetsBindingObserv
                     controller: _catatan,
                     decoration:
                         const InputDecoration(labelText: 'Catatan (opsional)', border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _petugas,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                        labelText: 'Nama petugas (opsional)',
+                        helperText: 'Diingat untuk foto berikutnya',
+                        border: OutlineInputBorder()),
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
