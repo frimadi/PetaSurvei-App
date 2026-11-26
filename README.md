@@ -1,4 +1,4 @@
-# Survei Jalan (aplikasi Android) v0.6
+# Survei Jalan (aplikasi Android) v0.7
 Kode di `app_src/`, APK dibangun oleh GitHub Actions (`.github/workflows/build-apk.yml`). Ikon di `app_icon/`. Skrip Drive: `apps-script/kode.gs`.
 
 # Peta Survei - Aplikasi Android (tahap 2)

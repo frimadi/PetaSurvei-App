@@ -20,6 +20,7 @@ class _HalamanPengaturanState extends State<HalamanPengaturan> {
   late final _url = TextEditingController(text: g.baca('url'));
   late final _kode = TextEditingController(text: g.baca('kode'));
   late bool _tulisan = g.baca('tulisan', '0') == '1';
+  late bool _galeri = g.baca('galeri', '1') == '1';
   late String _ukuran = g.baca('ukuran', 'Sedang');
   late String _hari = g.baca('hari', '7');
   String? _hasil;
@@ -122,8 +123,18 @@ class _HalamanPengaturanState extends State<HalamanPengaturan> {
         const Divider(height: 32),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
+          title: const Text('Simpan juga ke galeri'),
+          subtitle: const Text('Foto asli disalin ke album "Survei Jalan" di galeri HP sebagai cadangan. Bila Google Foto aktif, foto dapat ikut tercadang ke akun Google di HP ini.'),
+          value: _galeri,
+          onChanged: (v) {
+            setState(() => _galeri = v);
+            g.tulis('galeri', v ? '1' : '0');
+          },
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
           title: const Text('Tulisan pada foto'),
-          subtitle: const Text('Nama jalan, koordinat, arah, dan waktu ditempel pada foto saat dikirim. Belum aktif di versi ini.'),
+          subtitle: const Text('Nama jalan, koordinat, arah, waktu, dan petugas ditempel pada foto saat dikirim ke Drive. Foto asli di HP dan galeri tetap tanpa tulisan.'),
           value: _tulisan,
           onChanged: (v) {
             setState(() => _tulisan = v);

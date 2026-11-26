@@ -4,26 +4,8 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:image/image.dart' as img;
 import 'gudang.dart';
-
-/// Dijalankan di isolate terpisah agar layar tidak macet.
-/// Sisi terpanjang dikecilkan ke 1600 px, JPEG kualitas 80.
-Uint8List kompresJpeg(Uint8List data) {
-  try {
-    final asli = img.decodeJpg(data);
-    if (asli == null) return data;
-    var o = img.bakeOrientation(asli);
-    if (o.width >= o.height && o.width > 1600) {
-      o = img.copyResize(o, width: 1600, interpolation: img.Interpolation.average);
-    } else if (o.height > o.width && o.height > 1600) {
-      o = img.copyResize(o, height: 1600, interpolation: img.Interpolation.average);
-    }
-    return Uint8List.fromList(img.encodeJpg(o, quality: 80));
-  } catch (_) {
-    return data;
-  }
-}
+import 'watermark.dart';
 
 class Pengunggah extends ChangeNotifier {
   final Gudang gudang;
@@ -112,7 +94,21 @@ class Pengunggah extends ChangeNotifier {
     await gudang.perbarui();
     try {
       final mentah = await f.readAsBytes();
-      final kecil = await compute(kompresJpeg, mentah);
+      final tulis = gudang.baca('tulisan', '0') == '1';
+      final kecil = await compute(kompresDenganTulisan, <String, dynamic>{
+        'data': mentah,
+        'baris': tulis
+            ? susunBaris(
+                ruas: t.ruas,
+                idRuas: t.idRuas,
+                lat: t.lat,
+                lon: t.lon,
+                bearing: t.bearing,
+                waktuIso: t.waktu,
+                petugas: t.petugas)
+            : null,
+        'ukuran': gudang.baca('ukuran', 'Sedang'),
+      });
       final badan = jsonEncode({
         'kode': kode,
         'titik': {

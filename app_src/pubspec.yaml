@@ -1,7 +1,7 @@
 name: peta_survei_app
 description: Survei Jalan - aplikasi survei foto bergeotag untuk Bina Marga.
 publish_to: none
-version: 0.6.0+6
+version: 0.7.0+7
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -16,6 +16,7 @@ dependencies:
   shared_preferences: ^2.2.0
   http: ^1.2.0
   image: ^4.2.0
+  gal: ">=2.3.0 <4.0.0"
 
 flutter:
   uses-material-design: true

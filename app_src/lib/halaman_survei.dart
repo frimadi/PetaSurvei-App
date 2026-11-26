@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'daftar_ruas.dart';
+import 'galeri.dart';
 import 'gudang.dart';
+import 'nama_berkas.dart';
 import 'halaman_antrean.dart';
 import 'kompas.dart';
 import 'pilih_ruas.dart';
@@ -214,9 +216,14 @@ class _HalamanSurveiState extends State<HalamanSurvei> with WidgetsBindingObserv
       await widget.gudang.tulis('idRuas', t.idRuas);
       await widget.gudang.tulis('kondisi', t.kondisi);
       await widget.gudang.tulis('petugas', t.petugas);
+      var infoGaleri = '';
+      if (widget.gudang.baca('galeri', '1') == '1') {
+        final ok = await simpanKeGaleri(widget.gudang.jalur(t), namaBerkasGaleri(t.id, t.ruas));
+        infoGaleri = ok ? ' dan galeri' : ' (salinan galeri gagal)';
+      }
       if (mounted) {
         _catatan.clear();
-        _pesan('Foto tersimpan di HP.');
+        _pesan('Foto tersimpan di HP$infoGaleri.');
       }
     } catch (e) {
       if (mounted) _pesan('Gagal mengambil foto.');

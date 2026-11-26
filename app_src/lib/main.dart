@@ -56,6 +56,25 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
     _timer = Timer.periodic(const Duration(minutes: 2), (_) => widget.pengunggah.kirimSemua());
     widget.pengunggah.kirimSemua();
     widget.daftarRuas.perbaruiOtomatis();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _infoGaleri());
+  }
+
+  /// Pemberitahuan sekali: foto disalin ke galeri HP.
+  Future<void> _infoGaleri() async {
+    final g = widget.gudang;
+    if (g.baca('infoGaleri') == '1' || !mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Salinan foto di galeri'),
+        content: const Text(
+            'Mulai versi 0.7, foto survei juga disalin ke album "Survei Jalan" di galeri HP sebagai cadangan Anda. '
+            'Bila Google Foto aktif di HP ini, foto dapat ikut tercadang ke akun Google di HP tersebut.\n\n'
+            'Anda bisa mematikannya di Pengaturan > Simpan juga ke galeri.'),
+        actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('Mengerti'))],
+      ),
+    );
+    await g.tulis('infoGaleri', '1');
   }
 
   // Foto baru (status menunggu) langsung dikirim.

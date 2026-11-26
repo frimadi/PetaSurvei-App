@@ -80,7 +80,8 @@ class HalamanTentang extends StatelessWidget {
             'foto yang sudah terkirim (perubahan ikut dikirim ke Drive). Tahan foto untuk memilih dan menghapus dari HP.'),
         _judul(context, 'Catatan penting'),
         const Text(
-            '• Hapus dari HP tidak menghapus foto di Drive.\n'
+            '• Foto asli juga disalin ke album "Survei Jalan" di galeri HP (bisa dimatikan di Pengaturan). Hapus dari HP di aplikasi tidak menghapus salinan galeri maupun foto di Drive.\n'
+            '• Tulisan pada foto (nama jalan, koordinat, arah, waktu, petugas) bisa dinyalakan di Pengaturan. Tulisan hanya ada pada foto yang dikirim ke Drive dan tidak ikut berubah bila data diedit kemudian.\n'
             '• Pengiriman hanya berjalan saat aplikasi terbuka.\n'
             '• Arah kompas bisa meleset di dekat logam atau kabel; jauhkan HP dari benda tersebut saat memotret.\n'
             '• Bila akurasi GPS di atas 20 m, aplikasi akan menanyakan apakah tetap ingin memotret.\n'
